@@ -291,6 +291,11 @@ Windows Server 自绘候选窗（GDI）按 `Frame.columns` / `column_ems` 画矩
 
 IMK 输入法，源码按 `app / host / imk / candidates / menubar / preferences` 分目录。
 
+- 中英模式独立保存在 `imk::modifiers` 的主线程进程级状态，由输入处理、菜单栏和候选帧共用，不再直接把 Caps Lock 状态当当前模式。
+  `[shortcut] switch_mode` 缺省 `shift`，支持多选 `shift` / `control` / `ctrl+alt+space`；IMK 显式接收修饰键变化，以公共修饰位判定按下、设备低位仅作辅助；单击修饰键在松开时判定，期间其他按键或失焦均取消，组合键不触发切换。诊断日志记录事件键码、修饰位与切换状态，不记录输入文本。
+  Caps Lock 状态变化仍显式同步中英，之后 Shift 可再次切换；指示灯仅表示硬件状态。英文模式下仅在 Caps Lock 亮着时根据 Shift 修正系统送来的大小写，保持默认小写、Shift 大写。
+  切换时将组句原样上屏并清理候选与云联想；`[general] english_mode = false` 固定中文，与 `english_candidates` 仅关闭英文候选的含义不同。
+
 **在 Linux 上也能对它做类型检查**（不链接、不产出可执行文件，但编译错误与 clippy 都查得到）。
 `qingjian-macos` 在非 Apple 平台上是硬 `compile_error!`、提交钩子也排除它，于是在 Linux 上改它等于盲改。办法是对 darwin 目标 check，
 唯一的拦路虎是 `onig_sys`（candle → tokenizers 带进来的 C 库）要编 C，给它一个假的 pkg-config 条目让它改走「系统库」：

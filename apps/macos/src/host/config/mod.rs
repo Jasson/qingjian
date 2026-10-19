@@ -16,6 +16,7 @@ impl Host {
     /// `[predict]` 变了（或 `force`）才重建 Predictor；最后刷新云朵标识、菜单勾选与设置窗口。
     pub fn apply_config(&mut self, force: bool) {
         let config = self.settings.config().clone();
+        crate::imk::modifiers::configure(config.general.english_mode, config.shortcut.switch_mode);
         self.engine.set_fuzzy(config.fuzzy);
         self.engine.set_traditional(config.general.traditional());
         self.engine

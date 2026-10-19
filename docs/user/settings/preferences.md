@@ -53,7 +53,7 @@ description: 设置窗口各页的内容、打开方式、搜索、输入法菜�
 | 组 | 项 | 说明 |
 |---|---|---|
 | 英文 | 英文模式 | 关闭后固定为中文模式，需要英文时切换到其他输入法，见 [英文模式](../input/english-mode.md) |
-| 英文 | 切换键（Windows） | 单击 Shift、单击 Ctrl、Ctrl + Alt + Space，可多选；「Ctrl + Space（系统）」改的是 Windows 的设置，也影响微软拼音等简体中文输入法。macOS 由系统的 Caps Lock 切换 |
+| 英文 | 切换键（macOS、Windows） | 单击 Shift、单击 Ctrl、Ctrl + Alt + Space，可多选，缺省单击 Shift；macOS 对应 `⇧`、`⌃`、`⌃⌥ + Space`。Windows 的「Ctrl + Space（系统）」改的是系统设置，也影响微软拼音等简体中文输入法 |
 | 英文 | 默认英文模式（Windows） | 青简启动时用英文；按应用记住时，没记过的应用也从英文开始 |
 | 英文 | 按应用记住中英模式（Windows） | 切回应用时恢复它上次的中英状态，见 [默认模式与按应用记忆](../input/english-mode.md#默认模式与按应用记忆（Windows）) |
 | 英文 | 英文模式也给候选 | `Tab` 或方向键选词，不选时与直接打字相同；下面的「只在写字的应用里给」限定为浏览器、聊天与文档类应用 |

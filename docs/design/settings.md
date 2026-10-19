@@ -94,12 +94,12 @@
 | 标题 | 控件 | 配置 | ⓘ | 平台 |
 |---|---|---|---|---|
 | 英文模式 | 开关 | `general.english_mode` | 关掉后固定中文，要英文就切到别的输入法 | 全部 |
-| 切换键 | 三个勾选：单击 Shift / 单击 Ctrl / Ctrl + Alt + Space | `shortcut.switch_mode` | | Windows |
+| 切换键 | 三个勾选：单击 Shift / 单击 Ctrl / Ctrl + Alt + Space | `shortcut.switch_mode` | 单击修饰键期间使用过其他键则不切换 | macOS、Windows |
 | 英文模式也给候选 | 开关 | `general.english_candidates` | Tab 或方向键选词，不选时跟直接打字一样 | 全部 |
 | 只在写字的应用里给 | 勾选，挂在上一行下面 | `apps.english_candidates_on` | 浏览器、聊天、文档类应用；名单在配置文件里改 | 全部 |
 | Shift + 字母 | 分段：交给应用 / 进组句 | `general.shift_letter` | 进组句才能打出「C盘」 | 全部 |
 
-macOS 的切换键是 Caps Lock，由系统决定，所以不显示「切换键」这一行。
+macOS 与 Windows 缺省勾选单击 Shift；macOS 同时保留 Caps Lock 状态变化时同步中英的兼容行为。两种切换方式操作同一份内部模式，当前状态以青简菜单栏为准。英文模式总开关与英文候选开关独立：关闭前者固定中文，关闭后者仍可切英文直输。
 
 **标点**
 

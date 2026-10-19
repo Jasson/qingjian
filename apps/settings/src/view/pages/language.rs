@@ -172,7 +172,7 @@ fn width_label(full: bool) -> &'static str {
     if full { "全角" } else { "半角" }
 }
 
-/// 中英切换键可以多选，一个都不勾就只剩按钮能切；最后一个是 Windows 自己的 Ctrl + Space，改的是系统设置。
+/// 中英切换键可以多选；Windows 另列系统的 Ctrl + Space，改的是系统设置。
 fn switch_keys(ui: &mut Ui<Message>, page: &Page) -> Result<NodeId, RenderError> {
     let keys = page.settings.config.shortcut.switch_mode;
     let mut boxes = Vec::new();
@@ -191,13 +191,15 @@ fn switch_keys(ui: &mut Ui<Message>, page: &Page) -> Result<NodeId, RenderError>
             Message::SetList("shortcut", "switch_mode", values),
         )?);
     }
-    let system = page.settings.ctrl_space;
-    boxes.push(Checkbox::new(system, "Ctrl + Space（系统）").build(
-        ui,
-        &page.theme,
-        "switch-key-system",
-        Message::SystemCtrlSpace(!system),
-    )?);
+    if Feature::SystemCtrlSpace.here() {
+        let system = page.settings.ctrl_space;
+        boxes.push(Checkbox::new(system, "Ctrl + Space（系统）").build(
+            ui,
+            &page.theme,
+            "switch-key-system",
+            Message::SystemCtrlSpace(!system),
+        )?);
+    }
     let column = ui.scene().node(
         Style {
             flex_direction: FlexDirection::Column,
@@ -212,7 +214,11 @@ fn switch_keys(ui: &mut Ui<Message>, page: &Page) -> Result<NodeId, RenderError>
         ui,
         page,
         SettingRow::new("切换键")
-            .info("勾上的都能切，可以多选。Ctrl + Space（系统）是 Windows 的设置，也会影响微软拼音等简体中文输入法")
+            .info(if Feature::SystemCtrlSpace.here() {
+                "勾上的都能切，可以多选。Ctrl + Space（系统）是 Windows 的设置，也会影响微软拼音等简体中文输入法"
+            } else {
+                "勾上的都能切，可以多选。单击 Shift 或 Control 时切换，与其他按键组合使用时不切换；Caps Lock 也可切换，以菜单栏的中 / 英为准"
+            })
             .control(column),
         "switch-keys",
     )
