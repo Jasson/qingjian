@@ -1,14 +1,14 @@
-//! 「中英文」页：英文模式（开关、切换键、默认英文与按应用记住、英文候选、Shift + 字母），标点与中西文空格，悬浮状态条。
+//! 「中英文」页：英文模式（开关、切换键、默认英文与按应用记住、英文候选、Shift + 字母），标点与中西文空格，本地实时翻译，悬浮状态条。
 
 use bamboo_slip::taffy::{FlexDirection, NodeId, Style};
 use bamboo_slip::{Checkbox, RenderError, SettingRow, Ui, Visual, group, section_title};
 use qingjian_platform::{DEFAULT_ENGLISH_CANDIDATES_ON, ShiftLetter, SwitchKey};
 
-use crate::message::Message;
+use crate::message::{FieldId, Message};
 use crate::support::Feature;
 use crate::view::Page;
 use crate::view::parts::actions::with_notice;
-use crate::view::parts::controls::{choice, toggle, toggle_info};
+use crate::view::parts::controls::{choice, text_field, toggle, toggle_info};
 
 /// 全角 / 半角两档，配置里是布尔。
 const WIDTHS: [bool; 2] = [true, false];
@@ -153,6 +153,41 @@ pub fn language(ui: &mut Ui<Message>, page: &Page) -> Result<Vec<NodeId>, Render
     }
     out.push(section_title(ui, theme, "标点")?);
     out.push(group(ui, theme, &rows)?);
+
+    if Feature::LiveTranslation.here() {
+        let live = &config.live_translation;
+        let rows = [
+            toggle_info(
+                ui,
+                page,
+                "实时中英互译",
+                Some(
+                    "已上屏的本句文字与高亮候选一起预译，译文显示在独立悬浮条；只调用本机 Ollama，保留候选字词释义",
+                ),
+                ("live_translation", "enabled"),
+                live.enabled,
+                false,
+            )?,
+            text_field(
+                ui,
+                page,
+                FieldId::LiveBaseUrl,
+                "本机服务地址",
+                Some("需先运行 Ollama；仅允许本机地址，不使用云服务的地址与密钥"),
+                "http://localhost:11434",
+            )?,
+            text_field(
+                ui,
+                page,
+                FieldId::LiveModel,
+                "本地翻译模型",
+                Some("需先在 Ollama 下载对应模型；默认 maternion/hy-mt2:1.8b"),
+                "maternion/hy-mt2:1.8b",
+            )?,
+        ];
+        out.push(section_title(ui, theme, "本地实时翻译")?);
+        out.push(group(ui, theme, &rows)?);
+    }
 
     if Feature::StatusBar.here() {
         let status = toggle(

@@ -33,6 +33,7 @@ impl QingjianInputController {
                     self.commit_highlighted(client);
                 }
             }
+            host::with(|h| h.reset_live_translation());
             return false;
         };
         let c = char::from(*byte);
@@ -86,11 +87,13 @@ impl QingjianInputController {
                     let lead =
                         host::with(|h| h.engine.auto_space_before(letter.encode_utf8(&mut [0; 4])))
                             .unwrap_or(false);
-                    client.insert_text(&if lead {
+                    let text = if lead {
                         format!(" {letter}")
                     } else {
                         letter.to_string()
-                    });
+                    };
+                    host::with(|h| h.commit_live_text(&text));
+                    client.insert_text(&text);
                     host::with(|h| h.engine.note_passthrough(letter));
                     return true;
                 }
@@ -167,7 +170,10 @@ impl QingjianInputController {
         // 直输段里的空格：整段原样上屏，空格本身也交给应用（`hello, world` 里的空格要在）
         if raw && c == ' ' {
             self.commit_highlighted(client);
-            host::with(|h| h.engine.note_passthrough(c));
+            host::with(|h| {
+                h.engine.note_passthrough(c);
+                h.commit_live_text(" ");
+            });
             return false;
         }
         if composing && self.restore_bare_question(client) {
@@ -228,13 +234,16 @@ impl QingjianInputController {
         // 中文模式下的全角标点；转不了的（数字、字母以外的其他键）原样交给应用
         match host::with(|h| h.engine.punctuate(c)).flatten() {
             Some(full_width) => {
+                host::with(|h| h.commit_live_text(full_width));
                 client.insert_text(full_width);
                 true
             }
             None => {
                 host::with(|h| h.engine.note_passthrough(c));
+                let text = if lead { format!(" {c}") } else { c.to_string() };
+                host::with(|h| h.commit_live_text(&text));
                 if lead {
-                    client.insert_text(&format!(" {c}"));
+                    client.insert_text(&text);
                 }
                 lead
             }
@@ -249,8 +258,10 @@ impl QingjianInputController {
             lead
         })
         .unwrap_or(false);
+        let text = if lead { format!(" {c}") } else { c.to_string() };
+        host::with(|h| h.commit_live_text(&text));
         if lead {
-            client.insert_text(&format!(" {c}"));
+            client.insert_text(&text);
         }
         lead
     }

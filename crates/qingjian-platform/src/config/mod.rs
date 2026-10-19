@@ -28,6 +28,7 @@ use std::path::Path;
 
 use qingjian_core::FuzzyRules;
 use qingjian_predict::PredictConfig;
+use qingjian_predict::live::LiveTranslationConfig;
 use serde::{Deserialize, Serialize};
 use toml_edit::DocumentMut;
 
@@ -93,6 +94,9 @@ pub struct Config {
 
     /// 云联想。
     pub predict: PredictConfig,
+
+    /// 本机 Ollama 实时中英互译，与云联想分开配置。
+    pub live_translation: LiveTranslationConfig,
 
     /// 悬浮状态条（桌面上常驻、可拖动的中 / 英浮窗）。
     pub status_bar: StatusBarConfig,
@@ -373,6 +377,16 @@ disabled = []
 [model]
 # 本地整句模型：随包的小模型在本机给整句候选重新排序，全程离线；停顿后几十毫秒生效。关掉只用词库统计
 enabled = true
+
+[live_translation]
+# 本地实时中英互译（目前仅 macOS）：已上屏的本句文字加当前高亮候选，译文显示在独立悬浮条；保留字词释义
+enabled = false
+# 本机 Ollama 服务地址和模型；与云联想独立，不需要 API 密钥，不会回退到云服务
+base_url = "http://localhost:11434"
+model = "maternion/hy-mt2:1.8b"
+# 停键等待与单次请求超时（毫秒），继续输入会取消旧请求
+debounce_ms = 180
+timeout_ms = 5000
 
 [predict]
 # 云联想：把光标附近的文本发到下面的接口，让模型补全整句 / 联想下文。默认关闭。

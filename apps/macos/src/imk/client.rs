@@ -98,8 +98,14 @@ impl<'a> TextClient<'a> {
                 msg_send![self.object, markedRange],
             )
         };
-        if selected.location == NSNotFound as usize || length == 0 {
+        if selected.location == NSNotFound as usize {
             return None;
+        }
+        if length == 0 {
+            return (selected.location == 0 && selected.length == 0).then(|| SurroundingText {
+                before: String::new(),
+                after: String::new(),
+            });
         }
         // 组句中光标在 marked text 里；上下文以 marked text 为界
         let (start, end) = if marked.location == NSNotFound as usize {
@@ -164,6 +170,15 @@ mod tests {
         struct SelectionClient;
 
         impl SelectionClient {
+            #[unsafe(method(length))]
+            fn length(&self) -> usize { 0 }
+
+            #[unsafe(method(selectedRange))]
+            fn selected_range(&self) -> NSRange { NSRange::new(0, 0) }
+
+            #[unsafe(method(markedRange))]
+            fn marked_range(&self) -> NSRange { NSRange::new(usize::MAX, 0) }
+
             #[unsafe(method(insertText:replacementRange:))]
             fn insert_text(&self, text: &NSString, _range: NSRange) {
                 self.ivars().borrow_mut().push(format!("insert:{}", text));
@@ -183,6 +198,16 @@ mod tests {
             let this = Self::alloc().set_ivars(RefCell::new(Vec::new()));
             unsafe { msg_send![super(this), init] }
         }
+    }
+
+    #[test]
+    fn confirmed_empty_document_is_context_not_unsupported() {
+        let mock = SelectionClient::new();
+        let context = TextClient::new(&mock)
+            .surrounding_text(4096, 0)
+            .expect("空文档有已确认前文");
+        assert!(context.before.is_empty());
+        assert!(context.after.is_empty());
     }
 
     #[test]
