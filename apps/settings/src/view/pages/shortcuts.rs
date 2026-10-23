@@ -19,7 +19,7 @@ use crate::view::parts::controls::{choice, toggle_info};
 /// 组句中固定、不能改的键。
 const FIXED: &str = if cfg!(target_os = "macos") {
     "组句中固定的键：空格上屏首选，1–9 选词，回车原样上屏，Esc 清空；⌥⌫ 删一个音节，⌘⌫ 删到开头；\
-     ⌥← / ⌥→ 按音节跳，⌘← / ⌘→ 到开头 / 末尾；↑ / ↓ 移动高亮，PageUp / PageDown 与 ⇧Tab 翻页；Tab 采用整句补全。"
+     ⌥← / ⌥→ 按音节跳，⌘← / ⌘→ 到开头 / 末尾；↑ / ↓ 移动高亮，PageUp / PageDown 与 ⇧Tab 翻页；Tab 采用整句补全。终端草稿模式按上方设置执行。"
 } else {
     "组句中固定的键：空格上屏首选，1–9 选词，回车原样上屏，Esc 清空；← / → 移动拼音光标，Home / End 到开头 / 末尾；\
      ↑ / ↓ 移动高亮，PageUp / PageDown 与 Shift + Tab 翻页；Tab 采用整句补全。"
@@ -115,6 +115,52 @@ pub fn shortcuts(ui: &mut Ui<Message>, page: &Page) -> Result<Vec<NodeId>, Rende
     }
     out.push(section_title(ui, theme, "候选")?);
     out.push(group(ui, theme, &rows)?);
+
+    if Feature::LiveTranslation.here() {
+        let mut rows = vec![
+            recorder(
+                ui,
+                page,
+                Shortcut::CopyLiveTranslation,
+                "复制浮窗中当前显示的完整实时译文；录制时按 Backspace 可禁用快捷键",
+                false,
+            )?,
+            recorder(
+                ui,
+                page,
+                Shortcut::ReplaceLiveTranslation,
+                "需允许替换选中内容，先取得译文再选中完全对应的原文；不重新翻译，录制时按 Backspace 禁用快捷键",
+                false,
+            )?,
+        ];
+        if Feature::TerminalDraft.here() {
+            rows.insert(1, recorder(
+                ui,
+                page,
+                Shortcut::InsertLiveTranslation,
+                "仅系统 Terminal 草稿模式：输出最新整段译文，不自动执行；录制时按 Backspace 禁用快捷键",
+                false,
+            )?);
+        }
+        if Feature::TerminalDraft.here() {
+            rows.push(recorder(
+                ui,
+                page,
+                Shortcut::InsertOriginal,
+                "输出已确认原文加未选原始按键，不选高亮候选；回车、Esc或修饰字母可录制，退格禁用",
+                false,
+            )?);
+            rows.push(recorder(
+                ui,
+                page,
+                Shortcut::CancelDraft,
+                "一次取消整段草稿和拼音；回车、Esc或修饰字母可录制，点击别处取消录制，退格禁用",
+                false,
+            )?);
+        }
+        out.push(section_title(ui, theme, "本地实时翻译")?);
+        out.push(group(ui, theme, &rows)?);
+    }
 
     let reset =
         Button::new("恢复默认").build(ui, theme, "reset-shortcuts", Message::ResetShortcuts)?;
@@ -251,6 +297,17 @@ pub fn recorder(
 ) -> Result<NodeId, RenderError> {
     let current = shortcut.current(&page.settings.config);
     let control = KeyRecorder::new(&current)
+        .width(
+            if matches!(shortcut, Shortcut::InsertOriginal | Shortcut::CancelDraft) {
+                240.0
+            } else {
+                150.0
+            },
+        )
+        .allow_escape(matches!(
+            shortcut,
+            Shortcut::InsertOriginal | Shortcut::CancelDraft
+        ))
         .prompt(shortcut.prompt())
         .disabled(disabled)
         .recording(page.settings.recording == Some(shortcut))

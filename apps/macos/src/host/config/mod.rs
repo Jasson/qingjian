@@ -21,7 +21,15 @@ impl Host {
     /// `[predict]` 变了（或 `force`）才重建 Predictor；最后刷新云朵标识、菜单勾选与设置窗口。
     pub fn apply_config(&mut self, force: bool) {
         let config = self.settings.config().clone();
-        self.live.configure(&config.live_translation, force);
+        let draft_context = self.engine.application() == Some("com.apple.Terminal")
+            && (self.live.draft_configured() || config.live_translation.terminal_draft)
+            || !self.live.draft.source().is_empty();
+        let live_changed = self.live.configure(&config.live_translation, force);
+        if live_changed && draft_context {
+            self.engine.clear();
+            self.reset_session(None, Vec::new());
+            self.window.hide();
+        }
         self.live.window.set_appearance(config.general.appearance());
         self.live.window.set_font(&config.general.font);
         self.live

@@ -33,6 +33,34 @@ impl Settings {
             "translate_selection",
             defaults.translate_selection.key_string(),
         );
+        if Feature::LiveTranslation.here() {
+            for (key, value) in [
+                ("copy_live_translation", defaults.copy_live_translation),
+                (
+                    "replace_live_translation",
+                    defaults.replace_live_translation,
+                ),
+                ("insert_live_translation", defaults.insert_live_translation),
+            ] {
+                self.write(
+                    "shortcut",
+                    key,
+                    value.map(|combo| combo.key_string()).unwrap_or_default(),
+                );
+            }
+        }
+        if Feature::TerminalDraft.here() {
+            for (key, value) in [
+                ("insert_original", defaults.insert_original),
+                ("cancel_draft", defaults.cancel_draft),
+            ] {
+                self.write(
+                    "shortcut",
+                    key,
+                    value.map(|value| value.key_string()).unwrap_or_default(),
+                );
+            }
+        }
         if Feature::CloudRequestControls.here() {
             self.write("shortcut", "predict", defaults.predict.key_string());
         }

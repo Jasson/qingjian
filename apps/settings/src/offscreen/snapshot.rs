@@ -60,7 +60,10 @@ pub fn run(config: Option<&Path>, directory: &Path) -> Result<(), Box<dyn std::e
         if page == PageId::About {
             click(&mut runner, Key::ROOT.child("sources"))?;
         }
-        if matches!(page, PageId::About | PageId::Input | PageId::Language) {
+        if matches!(
+            page,
+            PageId::About | PageId::Input | PageId::Language | PageId::Shortcuts
+        ) {
             let area = content(&runner);
             hover(&mut runner, area)?;
             runner.handle(&Event::Scroll {
@@ -69,6 +72,21 @@ pub fn run(config: Option<&Path>, directory: &Path) -> Result<(), Box<dyn std::e
             });
             shot(&mut runner, &format!("{}：滚到底", page.label()))?;
         }
+    }
+
+    if crate::support::Feature::LiveTranslation.here() {
+        click(&mut runner, Key::ROOT.child("nav").child(PageId::Language))?;
+        let area = content(&runner);
+        hover(&mut runner, area)?;
+        runner.handle(&Event::Scroll {
+            dx: 0.0,
+            dy: 5000.0,
+        });
+        click(
+            &mut runner,
+            Key::ROOT.child("edit-live-replacement-shortcut"),
+        )?;
+        shot(&mut runner, "中英文：修改替换快捷键后定位录制器")?;
     }
 
     click(&mut runner, Key::ROOT.child("nav").child(PageId::Input))?;

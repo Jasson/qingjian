@@ -311,3 +311,120 @@ fn local_live_translation_is_independent_of_cloud_settings() {
         config
     );
 }
+
+#[test]
+fn live_translation_actions_default_and_disable_independently() {
+    let default = Config::default();
+    assert!(!default.live_translation.allow_replace);
+    assert_eq!(
+        default.shortcut.copy_live_translation.unwrap().key_string(),
+        "control+option+c"
+    );
+    assert_eq!(
+        default
+            .shortcut
+            .replace_live_translation
+            .unwrap()
+            .key_string(),
+        "control+option+r"
+    );
+    let enabled: Config = toml::from_str("[live_translation]\nallow_replace = true\n[shortcut]\ncopy_live_translation = ''\nreplace_live_translation = 'control+shift+x'\n").unwrap();
+    assert!(enabled.live_translation.allow_replace);
+    assert_eq!(enabled.shortcut.copy_live_translation, None);
+    assert_eq!(enabled.shortcut.replace_live_translation.unwrap().key, 'x');
+    assert_eq!(
+        toml::from_str::<Config>(&toml::to_string(&enabled).unwrap()).unwrap(),
+        enabled
+    );
+}
+
+#[test]
+fn live_shortcuts_reject_digit_and_period_combinations() {
+    for key in [
+        "copy_live_translation",
+        "replace_live_translation",
+        "insert_live_translation",
+    ] {
+        for value in ["option+1", "control+9", "control+option+."] {
+            assert!(toml::from_str::<Config>(&format!("[shortcut]\n{key} = '{value}'\n")).is_err());
+        }
+    }
+}
+
+#[test]
+fn terminal_draft_defaults_off_and_insertion_shortcut_round_trips() {
+    let default = Config::default();
+    assert!(!default.live_translation.terminal_draft);
+    assert_eq!(
+        default
+            .shortcut
+            .insert_live_translation
+            .unwrap()
+            .key_string(),
+        "control+option+v"
+    );
+    let custom: Config = toml::from_str(
+        "[live_translation]\nterminal_draft = true\n[shortcut]\ninsert_live_translation = ''\n",
+    )
+    .unwrap();
+    assert!(custom.live_translation.terminal_draft);
+    assert!(!custom.live_translation.enabled);
+    assert_eq!(custom.shortcut.insert_live_translation, None);
+    assert_eq!(
+        toml::from_str::<Config>(&toml::to_string(&custom).unwrap()).unwrap(),
+        custom
+    );
+}
+
+#[test]
+fn draft_shortcuts_default_aliases_disable_and_conflicts() {
+    use crate::DraftShortcut;
+    let old: Config = toml::from_str("[general]\npage_size = 5").unwrap();
+    assert_eq!(old.shortcut.insert_original, Some(DraftShortcut::Enter));
+    assert_eq!(old.shortcut.cancel_draft, Some(DraftShortcut::Escape));
+    for alias in ["enter", "return", "numpadenter", "numpad_enter", "ENTER"] {
+        assert_eq!(
+            alias.parse::<DraftShortcut>().unwrap(),
+            DraftShortcut::Enter
+        );
+    }
+    assert_eq!(
+        "esc".parse::<DraftShortcut>().unwrap().key_string(),
+        "escape"
+    );
+    for invalid in [
+        "a",
+        "space",
+        "backspace",
+        "option+1",
+        "control+.",
+        "shift+enter",
+    ] {
+        assert!(invalid.parse::<DraftShortcut>().is_err());
+    }
+    assert!("enter".parse::<KeyCombo>().is_err());
+    let disabled: Config =
+        toml::from_str("[shortcut]\ninsert_original = ''\ncancel_draft = ''").unwrap();
+    assert_eq!(disabled.shortcut.insert_original, None);
+    assert_eq!(disabled.shortcut.cancel_draft, None);
+    let serialized = toml::to_string(&disabled).unwrap();
+    assert!(serialized.contains("insert_original = \"\""));
+    assert_eq!(toml::from_str::<Config>(&serialized).unwrap(), disabled);
+    for config in [
+        "insert_original = 'escape'",
+        "cancel_draft = 'enter'",
+        "insert_original = 'control+option+v'",
+        "cancel_draft = 'control+option+c'",
+        "insert_original = 'control+option+r'",
+        "cancel_draft = 'control+option+t'",
+        "insert_original = 'control+option+j'",
+    ] {
+        assert!(
+            toml::from_str::<Config>(&format!("[shortcut]\n{config}"))
+                .unwrap()
+                .shortcut
+                .draft_shortcuts_conflict()
+        );
+    }
+    assert!(!old.shortcut.draft_shortcuts_conflict());
+}

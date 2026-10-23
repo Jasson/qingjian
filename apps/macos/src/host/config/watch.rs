@@ -59,6 +59,7 @@ define_class!(
             if crate::imk::catch_panic("定时器", || crate::host::with(|h| h.tick())).is_none() {
                 crate::imk::recover_from_panic(None);
             }
+            crate::imk::hotkey::sync();
         }
     }
 

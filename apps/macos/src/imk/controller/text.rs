@@ -33,7 +33,13 @@ impl QingjianInputController {
                     self.commit_highlighted(client);
                 }
             }
-            host::with(|h| h.reset_live_translation());
+            if client.stages_output() {
+                self.commit_raw(client);
+                host::with(|h| h.commit_live_text(text));
+                self.refresh(client);
+                return true;
+            }
+            host::with(|h| h.reset_live_translation("external_text"));
             return false;
         };
         let c = char::from(*byte);
@@ -92,8 +98,7 @@ impl QingjianInputController {
                     } else {
                         letter.to_string()
                     };
-                    host::with(|h| h.commit_live_text(&text));
-                    client.insert_text(&text);
+                    client.commit_text(&text);
                     host::with(|h| h.engine.note_passthrough(letter));
                     return true;
                 }
@@ -174,7 +179,7 @@ impl QingjianInputController {
                 h.engine.note_passthrough(c);
                 h.commit_live_text(" ");
             });
-            return false;
+            return client.stages_output();
         }
         if composing && self.restore_bare_question(client) {
             // 空格只是「把这个 ? 上屏」，不再多打一个空格；其他键按非组句状态继续处理
@@ -234,8 +239,7 @@ impl QingjianInputController {
         // 中文模式下的全角标点；转不了的（数字、字母以外的其他键）原样交给应用
         match host::with(|h| h.engine.punctuate(c)).flatten() {
             Some(full_width) => {
-                host::with(|h| h.commit_live_text(full_width));
-                client.insert_text(full_width);
+                client.commit_text(full_width);
                 true
             }
             None => {
@@ -245,7 +249,7 @@ impl QingjianInputController {
                 if lead {
                     client.insert_text(&text);
                 }
-                lead
+                lead || client.stages_output()
             }
         }
     }
@@ -263,6 +267,6 @@ impl QingjianInputController {
         if lead {
             client.insert_text(&text);
         }
-        lead
+        lead || client.stages_output()
     }
 }

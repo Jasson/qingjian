@@ -11,6 +11,31 @@ impl QingjianInputController {
         tracing::debug!(selector = %selector, "didCommandBySelector");
         self.note_application(&client);
         let composing = host::with(|h| !h.engine.composition().is_empty()).unwrap_or(false);
+        if client.stages_output() {
+            if composing && selector == sel!(insertNewline:) {
+                self.commit_highlighted(client);
+                return true;
+            }
+            if !composing {
+                if selector == sel!(deleteBackward:) {
+                    host::with(|h| h.backspace_live_text());
+                    self.render(client);
+                } else if selector == sel!(insertNewline:) {
+                    host::with(|h| {
+                        h.live_action_notice("原文尚在青简草稿中，请点击输出译文或输出原文")
+                    });
+                } else if selector == sel!(cancelOperation:) || selector == sel!(complete:) {
+                    host::with(|h| {
+                        h.live_action_notice("草稿仍保留；请使用已配置的取消快捷键或取消按钮")
+                    });
+                } else {
+                    host::with(|h| {
+                        h.live_action_notice("草稿目前只支持末尾退格；请输出或取消后再操作终端")
+                    });
+                }
+                return true;
+            }
+        }
         if !composing {
             // 删的是应用里的文字：刚上屏的词被整个删掉是「选错了」的信号，Engine 记着；
             // 按词 / 按行删的数不清删了几个字，撤销的账就不记了
@@ -24,16 +49,22 @@ impl QingjianInputController {
             {
                 host::with(|h| {
                     h.engine.break_chain();
-                    h.reset_live_translation();
+                    h.pause_live_translation("application_command");
                 });
             } else if selector == sel!(insertNewline:) {
                 // 回车交给应用：文本流里是一个段落边界
                 host::with(|h| {
                     h.engine.note_passthrough('\n');
-                    h.commit_live_text("\n");
+                    if host::context_policy(None, h.engine.application())
+                        == qingjian_predict::live::context::ContextPolicy::EventOnly
+                    {
+                        h.pause_live_translation("application_submit");
+                    } else {
+                        h.commit_live_text("\n");
+                    }
                 });
             } else {
-                host::with(|h| h.reset_live_translation());
+                host::with(|h| h.pause_live_translation("application_command"));
             }
             return false;
         }

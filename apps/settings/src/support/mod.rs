@@ -38,11 +38,13 @@ pub enum Feature {
     VocabularyTranslation,
     /// 本机 Ollama 实时中英互译。
     LiveTranslation,
+    /// 系统 Terminal 专用的译文草稿输出。
+    TerminalDraft,
 }
 
 impl Feature {
     #[cfg(test)]
-    pub const ALL: [Self; 17] = [
+    pub const ALL: [Self; 18] = [
         Self::AuxCode,
         Self::SwitchKeys,
         Self::SystemCtrlSpace,
@@ -60,6 +62,7 @@ impl Feature {
         Self::CloudRequestControls,
         Self::VocabularyTranslation,
         Self::LiveTranslation,
+        Self::TerminalDraft,
     ];
 
     /// 当前平台显示这一项。
@@ -103,7 +106,7 @@ impl Feature {
             Self::CloudRequestControls => [Todo, Yes, Todo],
             // Linux 还没接释义兜底
             Self::VocabularyTranslation => [Yes, Yes, Todo],
-            Self::LiveTranslation => [Yes, Todo, Todo],
+            Self::LiveTranslation | Self::TerminalDraft => [Yes, Todo, Todo],
         }
     }
 
@@ -128,6 +131,7 @@ impl Feature {
             Self::CloudRequestControls => "按需云联想与请求节奏",
             Self::VocabularyTranslation => "生词本整句翻译",
             Self::LiveTranslation => "本地实时中英互译",
+            Self::TerminalDraft => "终端译文上屏（草稿模式）",
         }
     }
 
@@ -159,6 +163,15 @@ impl Feature {
                 (PageId::Language, "实时中英互译"),
                 (PageId::Language, "本机服务地址"),
                 (PageId::Language, "本地翻译模型"),
+                (PageId::Language, "允许用译文替换选中内容"),
+                (PageId::Shortcuts, "复制实时译文"),
+                (PageId::Shortcuts, "用实时译文替换选中内容"),
+            ],
+            Self::TerminalDraft => &[
+                (PageId::Language, "终端译文上屏（草稿模式）"),
+                (PageId::Shortcuts, "输出终端草稿译文"),
+                (PageId::Shortcuts, "输出终端草稿原文"),
+                (PageId::Shortcuts, "取消终端整段草稿"),
             ],
             Self::SystemCtrlSpace
             | Self::EnglishPunctuation

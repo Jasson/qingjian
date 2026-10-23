@@ -3,8 +3,10 @@
 //! 只做两件事：把系统输入事件翻译成 Engine 的调用，把 Engine 的结果交给候选窗口。
 //! 排序、词库、翻译逻辑一概不许出现在这里。
 
+pub(crate) mod backspace_tap;
 mod client;
 mod controller;
+pub(crate) mod hotkey;
 mod mode_switch;
 pub mod modifiers;
 pub mod secure_input;
@@ -13,7 +15,7 @@ use std::any::Any;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 pub use client::TextClient;
-pub use controller::{QingjianInputController, click, panel_mouse};
+pub use controller::{QingjianInputController, click, panel_mouse, refresh_live_actions};
 
 /// 在 ObjC 运行时回调的边界拦住 panic。`define_class!` 生成的方法是系统直接调的，panic 穿过去整个进程就没了，
 /// 用户正在打的字也跟着没了。拦住后记一条错误日志（位置与 backtrace 由 `main.rs` 装的 panic hook 记），
@@ -35,16 +37,18 @@ pub fn catch_panic<R>(what: &'static str, f: impl FnOnce() -> R) -> Option<R> {
 /// panic 之后的善后：把缓冲区里的字母原样交给应用（用户敲过的键不能消失），再清掉引擎状态、收起窗口。
 /// 善后本身再 panic 就只能放弃，至少进程还活着。
 pub fn recover_from_panic(client: Option<TextClient<'_>>) {
+    let staged = crate::host::stage_text_output();
     let recovered = catch_unwind(AssertUnwindSafe(|| {
         let pending = crate::host::with(|h| {
             let text = h.engine.composition().text().to_owned();
             h.engine.clear();
             h.cancel_prediction();
-            h.reset_live_translation();
+            h.reset_live_translation("panic_recovery");
             h.window.hide();
             text
         });
         if let (Some(client), Some(text)) = (client, pending)
+            && !staged
             && !text.is_empty()
         {
             tracing::warn!(len = text.chars().count(), "panic 善后：缓冲区字母原样上屏");

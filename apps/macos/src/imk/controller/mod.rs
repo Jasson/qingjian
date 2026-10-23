@@ -14,16 +14,26 @@ use qingjian_platform::Modifiers;
 use super::{TextClient, catch_panic, modifiers, recover_from_panic, secure_input};
 use crate::host;
 use crate::menubar;
+use draft_route::DraftKeyRoute;
 
+mod backspace;
 mod click;
 mod command;
 mod commit;
 mod display;
+mod draft_route;
+mod draft_shortcut;
+mod entry_diagnostics;
+mod live;
+mod output_guard;
 mod panel;
+mod tap;
 mod text;
 mod translate;
 
-pub use click::{click, panel_mouse};
+pub(crate) use click::{active_controller_id, dispatch_system_translation_hotkey};
+pub use click::{click, panel_mouse, refresh_live_actions};
+pub(crate) use tap::dispatch_draft_tap;
 
 define_class!(
     // SAFETY:
@@ -52,7 +62,7 @@ define_class!(
         /// 默认只订阅 KeyDown；显式订阅修饰键和鼠标，鼠标提交由 dispatch_event 接管。
         #[unsafe(method(recognizedEvents:))]
         fn recognized_events(&self, _sender: Option<&AnyObject>) -> usize {
-            let mask = (NSEventMask::KeyDown | NSEventMask::FlagsChanged
+            let mask = (NSEventMask::KeyDown | NSEventMask::KeyUp | NSEventMask::FlagsChanged
                 | NSEventMask::LeftMouseDown | NSEventMask::RightMouseDown
                 | NSEventMask::OtherMouseDown).bits() as usize;
             tracing::info!(mask = format_args!("{mask:#x}"), "订阅输入事件");
@@ -66,15 +76,32 @@ define_class!(
         // define_class! 会把返回类型转成 ObjC BOOL，方法体里不能用 `return`，逻辑放在下面的 inherent impl
         #[unsafe(method(handleEvent:client:))]
         fn handle_event(&self, event: Option<&NSEvent>, client: Option<&AnyObject>) -> bool {
+            entry_diagnostics::observe(self, event, client);
             match (event, client) {
                 (Some(event), Some(client)) => {
                     let client = TextClient::new(client);
                     // panic 拦下后把缓冲区原样上屏，这个按键交还给应用
-                    catch_panic("handleEvent", || self.dispatch_event(event, client))
+                    let staged = client.stages_output();
+                    let has_pending = host::with(|h| !h.live.draft.source().is_empty() || !h.engine.composition().is_empty()).unwrap_or(true);
+                    let flags = event.modifierFlags();
+                    let route = DraftKeyRoute::for_key(event.keyCode(), flags.contains(NSEventModifierFlags::Command) || flags.contains(NSEventModifierFlags::Control), has_pending);
+                    if staged && event.r#type() == NSEventType::KeyDown && event.keyCode() == 51 && !event.isARepeat() {
+                        let metadata = host::with(|h| (h.engine.composition().text().chars().count(), h.live.draft.committed().chars().count(), h.live.paused));
+                        tracing::info!(target: "live_translation", key_code = 51, route = ?route,
+                            pinyin_units = metadata.map(|v| v.0), draft_units = metadata.map(|v| v.1), paused = metadata.map(|v| v.2),
+                            command = flags.contains(NSEventModifierFlags::Command), control = flags.contains(NSEventModifierFlags::Control),
+                            option = flags.contains(NSEventModifierFlags::Option), "收到草稿退格键");
+                    }
+                    let handled = catch_panic("handleEvent", || self.dispatch_event(event, client, route))
                         .unwrap_or_else(|| {
                             recover_from_panic(Some(client));
                             false
-                        })
+                        });
+                    let departed_terminal = event.keyCode() == 51 && staged && self.is_current_controller()
+                        && host::with(|h| h.engine.application().is_some_and(|app| app != "com.apple.Terminal")).unwrap_or(false);
+                    if departed_terminal { handled } else {
+                        route.consume_fallback(staged || client.stages_output(), event.r#type() == NSEventType::KeyDown, handled)
+                    }
                 }
                 _ => false,
             }
@@ -86,12 +113,17 @@ define_class!(
             modifiers::cancel_tap("commitComposition");
             let client = client.map(TextClient::new);
             let done = catch_panic("commitComposition", || {
-                if let Some(client) = client {
+                if let Some(client) = client && !client.stages_output() {
                     self.commit_raw(client);
                 }
                 host::with(|h| {
                     h.cancel_prediction();
-                    h.reset_live_translation();
+                    // Terminal 会在回显过程中隐式要求结束 marked，真实焦点和显式键事件另有边界。
+                    if host::context_policy(None, h.engine.application())
+                        != qingjian_predict::live::context::ContextPolicy::EventOnly
+                    {
+                        h.pause_live_translation("commit_composition");
+                    }
                     h.window.hide();
                 });
             });
@@ -105,6 +137,8 @@ define_class!(
             tracing::info!("activateServer");
             modifiers::cancel_tap("activateServer");
             modifiers::sync_caps();
+            crate::imk::hotkey::disable();
+            crate::imk::backspace_tap::disable();
             self.set_active();
             let done = catch_panic("activateServer", || {
                 // 会话级把键盘布局覆盖为 ABC（QWERTY）：系统会沿用「上一次使用的拉丁键盘布局」，
@@ -122,7 +156,7 @@ define_class!(
                     tracing::debug!(%bundle, "当前应用");
                 }
                 host::with(|h| {
-                    h.reset_live_translation();
+                    h.reset_live_translation("activate");
                     h.engine.set_application(bundle);
                     h.refresh_text_replacements();
                     h.reload_config_if_changed();
@@ -132,6 +166,11 @@ define_class!(
             });
             if done.is_none() {
                 recover_from_panic(None);
+                crate::imk::hotkey::disable();
+            } else {
+                crate::imk::hotkey::activate();
+                crate::imk::backspace_tap::activate();
+                entry_diagnostics::arm(self);
             }
         }
 
@@ -155,18 +194,24 @@ define_class!(
 
         #[unsafe(method(deactivateServer:))]
         fn deactivate_server(&self, sender: Option<&AnyObject>) {
+            entry_diagnostics::disarm(self);
             tracing::info!("deactivateServer");
             modifiers::cancel_tap("deactivateServer");
+            if self.is_current_controller() {
+                crate::imk::hotkey::disable();
+                crate::imk::backspace_tap::disable();
+            }
             self.clear_active();
             let client = sender.map(TextClient::new);
             let done = catch_panic("deactivateServer", || {
-                if let Some(client) = client {
-                    self.commit_raw(client);
-                }
+                let staged = client.is_some_and(|client| client.stages_output())
+                    || host::with(|h| h.terminal_draft_active()).unwrap_or(true);
+                if !staged && let Some(client) = client { self.commit_raw(client); }
+                if staged { host::with(|h| h.cancel_terminal_draft("deactivate_draft")); }
                 // 切换输入源时无论如何都收掉候选框，不能留一个孤儿窗口在屏幕上
                 host::with(|h| {
                     h.cancel_prediction();
-                    h.reset_live_translation();
+                    h.reset_live_translation("deactivate");
                     h.window.hide();
                     h.indicator.deactivate();
                     h.watch.stop();
@@ -234,7 +279,6 @@ impl QingjianInputController {
         };
         // 在客户端调用之前确认，调用期间可能重入并产生下一次模式变更。
         modifiers::did_finish();
-        host::with(|h| h.commit_live_text(&raw));
         client.commit_pending_raw(&raw);
         true
     }
@@ -249,19 +293,39 @@ impl QingjianInputController {
     }
 
     /// 修饰键变化先判单击，鼠标显式提交；按下事件分发为命令或文本。
-    fn dispatch_event(&self, event: &NSEvent, client: TextClient<'_>) -> bool {
+    fn dispatch_event(
+        &self,
+        event: &NSEvent,
+        client: TextClient<'_>,
+        draft_route: DraftKeyRoute,
+    ) -> bool {
         if secure_input::enabled() {
-            host::with(|h| h.reset_live_translation());
+            backspace::trace_rejection(
+                event.keyCode(),
+                client.stages_output(),
+                event.isARepeat(),
+                "secure_input",
+            );
+            crate::imk::hotkey::disable();
+            crate::imk::backspace_tap::disable();
+            host::with(|h| h.reset_live_translation("secure_input"));
         }
         if self.in_login_window() {
             modifiers::cancel_tap("loginwindow");
             return false;
         }
         if modifiers::needs_finish() && !self.finish_mode_switch(client) {
+            backspace::trace_rejection(
+                event.keyCode(),
+                client.stages_output(),
+                event.isARepeat(),
+                "mode_cleanup_unavailable",
+            );
             return false;
         }
         let flags = event.modifierFlags();
         match event.r#type() {
+            NSEventType::KeyUp => return crate::imk::backspace_tap::release_imk(event.keyCode()),
             NSEventType::FlagsChanged => {
                 if modifiers::flags_changed(event.keyCode(), flags.bits()) {
                     self.finish_mode_switch(client);
@@ -272,7 +336,10 @@ impl QingjianInputController {
             | NSEventType::RightMouseDown
             | NSEventType::OtherMouseDown => {
                 modifiers::cancel_tap("mouse");
-                host::with(|h| h.reset_live_translation());
+                if host::with(|h| h.live.window.owns_event(event)).unwrap_or(false) {
+                    return false;
+                }
+                host::with(|h| h.pause_live_translation("mouse_event"));
                 // recognizedEvents 不再只有 KeyDown 后，IMK 不会代为提交点击外的组句。
                 let point = event.locationInWindow();
                 let mtm = MainThreadMarker::new().expect("IMK 回调只在主线程运行");
@@ -282,16 +349,22 @@ impl QingjianInputController {
                 if !client.point_in_marked_text(point) {
                     self.finish_mode_switch(client);
                 }
-                host::with(|h| h.reset_live_translation());
+                host::with(|h| h.pause_live_translation("mouse_event"));
                 return false;
             }
             NSEventType::KeyDown => {}
             _ => return false,
         }
-        if !self.observe_live_context(client) {
-            return false;
+        if crate::imk::backspace_tap::owns_imk(event.timestamp(), event.keyCode()) {
+            return true;
         }
         if modifiers::sync_caps() && !self.finish_mode_switch(client) {
+            backspace::trace_rejection(
+                event.keyCode(),
+                client.stages_output(),
+                event.isARepeat(),
+                "caps_cleanup_unavailable",
+            );
             return false;
         }
         if modifiers::key_down(event.keyCode(), flags.bits(), event.isARepeat()) {
@@ -311,6 +384,36 @@ impl QingjianInputController {
             control,
             command,
         };
+        let live_typed = event
+            .charactersIgnoringModifiers()
+            .and_then(|text| text.to_string().to_ascii_lowercase().chars().next());
+        if let Some(consumed) = self.handle_live_shortcut(pressed, live_typed, client) {
+            return consumed;
+        }
+        if let Some(consumed) = self.handle_draft_shortcut(event, client) {
+            return consumed;
+        }
+        if client.stages_output() && draft_route == DraftKeyRoute::PassTerminal {
+            backspace::trace_rejection(key, true, event.isARepeat(), "empty_draft_passthrough");
+            return false;
+        }
+        if client.stages_output() && key == 51 && !command && !control && !option {
+            return self.handle_terminal_backspace(client, event.isARepeat());
+        }
+        if client.stages_output() && (command || control) {
+            backspace::trace_rejection(key, true, event.isARepeat(), "modified_command");
+            host::with(|h| h.live_action_notice("草稿模式仅支持尾部编辑，请使用输出或取消按钮"));
+            return true;
+        }
+        if !self.observe_live_context(client) {
+            backspace::trace_rejection(
+                key,
+                client.stages_output(),
+                event.isARepeat(),
+                "context_or_host_changed",
+            );
+            return client.stages_output();
+        }
         // 提示在显示：敲任何键先收掉，键照常处理
         host::with(|h| h.clear_notice());
         // 翻译选中文字进行中：回车 / 空格 / 1 接受，Esc 放弃，其他键放弃后照常交给应用
@@ -392,7 +495,7 @@ impl QingjianInputController {
             return self.handle_command(selector, client);
         }
         if command || control {
-            host::with(|h| h.reset_live_translation());
+            host::with(|h| h.pause_live_translation("application_shortcut"));
             return false;
         }
         match event.characters() {

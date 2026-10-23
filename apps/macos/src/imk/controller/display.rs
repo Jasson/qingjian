@@ -10,25 +10,62 @@ use qingjian_platform::HighlightKeys;
 impl QingjianInputController {
     /// 不把编辑器已有文字当作待译输入，只核验受控文本仍紧邻光标。
     pub(super) fn observe_live_context(&self, client: TextClient<'_>) -> bool {
-        let epoch = host::with(|h| h.live.active().then_some(h.live.epoch)).flatten();
-        let Some(epoch) = epoch else {
+        let observation =
+            host::with(|h| h.live.active().then(|| h.live_observation_token())).flatten();
+        let Some(observation) = observation else {
             return true;
         };
-        let before = client
-            .surrounding_text(4096, 0)
-            .map(|context| context.before);
+        let snapshot = client.live_context(4096);
         let anchor = client.caret_rect();
         host::with(|h| {
-            if h.live.epoch != epoch {
+            if h.live.epoch != observation.epoch() {
                 return false;
             }
+            if !observation.matches(&h.live_observation_token()) {
+                // 同会话内发生了输入重入：丢弃旧采样，不更新前文或能力；原键继续正常处理。
+                return true;
+            }
+            let epoch = observation.epoch();
             h.anchor = anchor;
-            if !h.live.tracker.reconcile_before(before.as_deref()) {
-                h.reset_live_translation();
+            if h.engine.application().is_some_and(|previous| snapshot.application.as_deref().is_some_and(|current| previous != current)) {
+                h.reset_live_translation("application_changed");
+                h.engine.set_application(snapshot.application.clone());
+                return true;
+            }
+            if h.live.paused {
+                h.live.last_context = Some(snapshot);
+                return true;
+            }
+            if h.terminal_draft_active() {
+                h.live.last_context = Some(snapshot);
+                return true;
+            }
+            let previous = h.live.context.confidence();
+            let composition_active = !h.engine.composition().is_empty();
+            let policy = host::context_policy(snapshot.application.as_deref(), h.engine.application());
+            let decision = h.live.context.observe_with_policy(&snapshot, h.live.tracker.committed(), composition_active, policy);
+            let before_units = snapshot.before.as_ref().map(|text| text.encode_utf16().count());
+            if previous != decision.confidence || decision.reset_reason.is_some() {
+                tracing::info!(target: "live_translation", previous = ?previous, confidence = ?decision.confidence,
+                    reason = decision.reset_reason, context_mismatch = decision.context_mismatch, policy = ?policy, document_units = snapshot.document_length,
+                    selected = ?snapshot.selected, marked = ?snapshot.marked, active_marked = ?snapshot.active_marked(), composition_active,
+                    before_units, probe_range = ?snapshot.probe_range, probe_units = snapshot.probe_length,
+                    history_units = h.live.tracker.committed().encode_utf16().count(),
+                    application = snapshot.application.as_deref(), epoch,
+                    "实时翻译上下文可信度");
+            }
+            tracing::debug!(target: "live_translation", client_proxy = snapshot.client_proxy,
+                document_units = snapshot.document_length, selected = ?snapshot.selected,
+                marked = ?snapshot.marked, active_marked = ?snapshot.active_marked(), composition_active, before_units, probe_units = snapshot.probe_length,
+                confidence = ?decision.confidence, context_mismatch = decision.context_mismatch, policy = ?policy, epoch, "实时翻译上下文采样");
+            if let Some(reason) = decision.reset_reason {
+                if reason == "application_changed" { h.reset_live_translation(reason); }
+                else { h.pause_live_translation(reason); h.live.last_context = Some(snapshot); }
+            } else {
+                h.live.last_context = Some(snapshot);
             }
             true
-        })
-        .unwrap_or(false)
+        }).unwrap_or(false)
     }
 
     /// 按当前缓冲区重新查候选、更新 marked text，回到第一页并重画候选窗口。
@@ -104,14 +141,16 @@ impl QingjianInputController {
         let Some(mark) = restored else {
             return false;
         };
-        host::with(|h| h.commit_live_text(&mark));
-        client.insert_text(&mark);
+        client.commit_text(&mark);
         self.refresh(client);
         true
     }
 
     /// 记下光标位置并按会话状态重画候选窗口。
     pub(super) fn render(&self, client: TextClient<'_>) {
+        if !self.observe_live_context(client) {
+            return;
+        }
         let anchor = client.caret_rect();
         host::with(|h| {
             h.anchor = anchor;
@@ -160,8 +199,7 @@ impl QingjianInputController {
         };
         host::with(|h| h.engine.accept_prediction(&text));
         tracing::debug!(%text, "接受整句补全");
-        host::with(|h| h.commit_live_text(&text));
-        client.insert_text(&text);
+        client.commit_text(&text);
         self.refresh(client);
         true
     }
@@ -227,8 +265,14 @@ impl QingjianInputController {
     pub(super) fn note_application(&self, client: &TextClient<'_>) {
         let app = client.bundle_identifier();
         host::with(|h| {
-            if h.engine.application() != app.as_deref() {
-                h.reset_live_translation();
+            let changed = h
+                .engine
+                .application()
+                .is_some_and(|previous| app.as_deref().is_some_and(|current| previous != current));
+            if changed {
+                h.reset_live_translation("application_changed");
+            }
+            if app.is_some() && h.engine.application() != app.as_deref() {
                 h.engine.set_application(app);
             }
         });

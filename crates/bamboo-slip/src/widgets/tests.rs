@@ -12,6 +12,8 @@ enum Message {
     Toggle,
     Down,
     Up,
+    Record(KeyCode),
+    Cancel,
 }
 
 /// 一排：分段选择（选中第 `selected` 个）、开关、到了上限的步进框。
@@ -346,4 +348,48 @@ fn info_marks_with_a_link_send_it_when_clicked() {
         [Message::Toggle]
     );
     assert!(click(&mut interaction, Key::ROOT.child(("info", "没链接"))).is_empty());
+}
+
+#[test]
+fn key_recorder_escape_can_be_recorded_without_changing_blur_cancel() {
+    for allow_escape in [false, true] {
+        let mut text = TextPainter::new(FontLibrary::system("en").unwrap());
+        let mut interaction = Interaction::new();
+        let mut ui = Ui::new(&interaction);
+        let theme = WidgetTheme::new(WidgetColors::LIGHT, 1.0);
+        let recorder = KeyRecorder::new("Enter")
+            .recording(true)
+            .allow_escape(allow_escape)
+            .build(
+                &mut ui,
+                &theme,
+                "recorder",
+                Message::Toggle,
+                |press| Message::Record(press.key.clone()),
+                Message::Cancel,
+            )
+            .unwrap();
+        let next = Button::new("next")
+            .build(&mut ui, &theme, "next", Message::Toggle)
+            .unwrap();
+        let root = ui
+            .scene()
+            .node(Style::default(), Visual::Group, &[recorder, next])
+            .unwrap();
+        let (mut scene, elements) = ui.finish();
+        scene.layout(root, &mut text).unwrap();
+        interaction.attach(&scene, root, elements).unwrap();
+        press(&mut interaction, KeyCode::Tab);
+        let expected = if allow_escape {
+            Message::Record(KeyCode::Escape)
+        } else {
+            Message::Cancel
+        };
+        assert_eq!(press(&mut interaction, KeyCode::Escape), vec![expected]);
+        assert_eq!(
+            press(&mut interaction, KeyCode::Enter),
+            vec![Message::Record(KeyCode::Enter)]
+        );
+        assert_eq!(press(&mut interaction, KeyCode::Tab), vec![Message::Cancel]);
+    }
 }

@@ -11,6 +11,7 @@ mod diagnostics;
 mod dictionaries;
 mod init;
 mod live;
+pub(crate) use live::{ObservationToken, context_policy};
 mod model;
 mod presenting;
 mod session;
@@ -221,10 +222,52 @@ const GLOSSARY_LANGUAGES: [Language; 5] = [
 /// 所以借不到就记一条日志放过这次调用，调用方本来就都按 `None` 处理；根治靠把 IPC 放在借用之外。
 pub fn with<R>(f: impl FnOnce(&mut Host) -> R) -> Option<R> {
     HOST.with(|host| match host.try_borrow_mut() {
-        Ok(mut guard) => guard.as_mut().map(f),
+        Ok(mut guard) => {
+            let result = guard.as_mut().map(f);
+            let observation = crate::imk::hotkey::tracking()
+                .then(|| guard.as_ref().map(Host::live_observation_token))
+                .flatten();
+            let backspace = guard.as_ref().and_then(|h| {
+                let configured =
+                    h.terminal_draft_active() && h.settings.config().live_translation.enabled;
+                (configured || crate::imk::backspace_tap::tracking()).then(|| {
+                    (
+                        h.live_observation_token(),
+                        configured,
+                        !h.engine.composition().is_empty() || !h.live.draft.source().is_empty(),
+                        crate::imk::backspace_tap::Bindings::for_config(
+                            &h.settings.config().shortcut,
+                        ),
+                    )
+                })
+            });
+            drop(guard);
+            if let Some(observation) = observation {
+                crate::imk::hotkey::publish_observation(observation);
+            }
+            if let Some((token, configured, content, bindings)) = backspace {
+                crate::imk::backspace_tap::publish(token, configured, content, bindings);
+            }
+            result
+        }
         Err(_) => {
             tracing::warn!("Host 正在被借用（IMK 回调重入），本次调用跳过");
             None
         }
+    })
+}
+
+/// 把已确认的完整译文写入剪贴板；调用方先释放 Host 借用。
+pub fn copy_text_to_pasteboard(text: &str) -> bool {
+    diagnostics::copy_to_pasteboard(text)
+}
+
+/// 文本写入门禁在借用冲突时关闭输出，不能把 IMK 重入当成草稿模式关闭。
+pub(crate) fn stage_text_output() -> bool {
+    HOST.with(|host| match host.try_borrow() {
+        Ok(guard) => guard
+            .as_ref()
+            .is_some_and(|h| h.terminal_draft_active() || !h.live.draft.source().is_empty()),
+        Err(_) => true,
     })
 }

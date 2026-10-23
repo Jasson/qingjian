@@ -247,3 +247,54 @@ fn every_key_the_settings_app_writes_is_read_by_the_ime() {
         harness.checked.keys()
     );
 }
+
+#[test]
+fn production_draft_recorder_saves_escape_instead_of_cancelling_or_quitting() {
+    if !crate::support::Feature::TerminalDraft.here() {
+        return;
+    }
+    let dir = std::env::temp_dir().join(format!("qingjian-draft-escape-{}", std::process::id()));
+    let path = dir.join("config.toml");
+    Config::set_value(&path, "shortcut", "cancel_draft", "control+option+x").unwrap();
+    let mut settings = Settings::load(path.clone()).unwrap();
+    settings.page = PageId::Shortcuts;
+    let mut text = TextPainter::new(FontLibrary::system("zh-CN").unwrap());
+    settings.setup(&mut text);
+    let mut harness = Harness {
+        settings,
+        interaction: Interaction::new(),
+        text,
+        path: path.clone(),
+        problems: BTreeMap::new(),
+        checked: BTreeMap::new(),
+    };
+    harness.frame();
+    for message in harness.click(bamboo_slip::Key::ROOT.child(("recorder", Shortcut::CancelDraft)))
+    {
+        harness.settings.update(message);
+    }
+    assert_eq!(harness.settings.recording, Some(Shortcut::CancelDraft));
+    harness.frame();
+    let messages = harness
+        .interaction
+        .handle(&Event::Key(KeyPress::new(
+            KeyCode::Escape,
+            Modifiers::default(),
+        )))
+        .messages;
+    assert!(messages.iter().any(|message| matches!(message, Message::Recorded(Shortcut::CancelDraft, press) if press.key == KeyCode::Escape)));
+    assert!(
+        !messages
+            .iter()
+            .any(|message| matches!(message, Message::Quit | Message::StopRecording))
+    );
+    for message in messages {
+        harness.settings.update(message);
+    }
+    assert_eq!(
+        Config::load(&path).unwrap().shortcut.cancel_draft,
+        Some(qingjian_platform::DraftShortcut::Escape)
+    );
+    assert_eq!(harness.settings.recording, None);
+    std::fs::remove_dir_all(dir).unwrap();
+}

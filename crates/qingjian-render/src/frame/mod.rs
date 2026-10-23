@@ -1,10 +1,12 @@
 //! 一帧要画的全部内容：顶部拼音行、候选行、高亮、页脚、右侧整句补全，以及给主题显示的输入状态。只是展示形态，不含排序或查词。
 
+mod action;
 mod mode;
 mod preedit;
 mod row;
 mod tone;
 
+pub use action::{Action, ActionTarget};
 pub use mode::Mode;
 pub use preedit::{Preedit, PreeditSegment, PreeditStyle};
 pub use row::Row;
@@ -38,11 +40,17 @@ pub struct Frame {
 
     /// 输入状态（中 / 英、简 / 繁、标点、方案）。
     pub mode: Mode,
+
+    /// 独立翻译条操作；有操作时正文仅展示，不作为候选点击。
+    pub actions: Vec<Action>,
 }
 
 impl Frame {
     pub fn is_empty(&self) -> bool {
-        self.rows.is_empty() && self.preedit.is_none() && self.trailing().is_none()
+        self.rows.is_empty()
+            && self.preedit.is_none()
+            && self.trailing().is_none()
+            && self.actions.is_empty()
     }
 
     /// 顶部要不要画一行（拼音或右侧文字任一存在）。

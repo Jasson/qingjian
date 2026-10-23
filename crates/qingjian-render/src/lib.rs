@@ -17,7 +17,9 @@ mod theme;
 #[cfg(target_os = "windows")]
 pub use bamboo_slip::system_fonts;
 pub use bamboo_slip::{Color, FontLibrary, FontSpec, Pixmap, RenderError, UiFont};
-pub use frame::{Frame, Mode, Preedit, PreeditSegment, PreeditStyle, Row, Tone};
+pub use frame::{
+    Action, ActionTarget, Frame, Mode, Preedit, PreeditSegment, PreeditStyle, Row, Tone,
+};
 pub use layout::Layout;
 pub use renderer::{HitRegion, HitTarget, Rendered, RenderedStatus, Renderer, StatusCell};
 pub use theme::{TextSizes, Theme, ThemeError, ThemeLibrary};

@@ -23,8 +23,7 @@ impl QingjianInputController {
             return false;
         };
         tracing::debug!(%text, "commit");
-        host::with(|h| h.commit_live_text(&text));
-        client.insert_text(&text);
+        client.commit_text(&text);
         self.refresh(client);
         true
     }
@@ -38,8 +37,7 @@ impl QingjianInputController {
             return false;
         }
         tracing::debug!(%raw, "commit raw");
-        host::with(|h| h.commit_live_text(&raw));
-        client.insert_text(&raw);
+        client.commit_text(&raw);
         self.refresh(client);
         true
     }

@@ -20,6 +20,7 @@ impl Router {
             return;
         }
         let text = match target {
+            HitTarget::Action(_) => None,
             HitTarget::Candidate(offset) => self
                 .slot_index(offset + 1)
                 .and_then(|index| self.commit_index(index)),

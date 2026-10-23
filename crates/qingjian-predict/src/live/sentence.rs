@@ -1,5 +1,7 @@
 //! 跟踪实际上屏的历史与暂定候选，退格后重新计算句界。
 
+use super::ReplacementPlan;
+
 #[derive(Debug, Default)]
 pub struct SentenceTracker {
     committed: String,
@@ -70,6 +72,61 @@ impl SentenceTracker {
     pub fn source(&self) -> String {
         let text = format!("{}{}", self.committed, self.preview);
         current_sentence(&text).trim().to_owned()
+    }
+
+    /// 当前已上屏句子的 UTF-8 字节范围，去掉前导空白、保留尾部空白。
+    pub fn current_committed_span(&self) -> std::ops::Range<usize> {
+        let sentence = current_sentence(&self.committed).trim_start();
+        self.committed.len() - sentence.len()..self.committed.len()
+    }
+
+    /// 候选范围仅限已上屏当前句，必须再经实际精确读回才能生成写入计划。
+    pub fn replacement_candidate(
+        &self,
+        successful_source: &str,
+        selected: Option<crate::live::context::ContextRange>,
+        has_active_marked: bool,
+    ) -> Option<crate::live::ReplacementCandidate> {
+        if !self.preview.is_empty() || has_active_marked || successful_source.is_empty() {
+            return None;
+        }
+        let sentence = &self.committed[self.current_committed_span()];
+        if sentence.trim_end() != successful_source {
+            return None;
+        }
+        crate::live::ReplacementCandidate::new(sentence, selected?)
+    }
+
+    /// 仅返回可在现场精确核验的已上屏句子；成功请求的修订号由调用方另行核对。
+    pub fn replacement_plan(
+        &self,
+        successful_source: &str,
+        before: &str,
+        selection_location_utf16: usize,
+        selection_length_utf16: usize,
+        has_marked_text: bool,
+    ) -> Option<ReplacementPlan> {
+        if !self.preview.is_empty()
+            || has_marked_text
+            || selection_length_utf16 != 0
+            || selection_location_utf16 == usize::MAX
+        {
+            return None;
+        }
+        let sentence = &self.committed[self.current_committed_span()];
+        if successful_source.is_empty() || sentence.trim_end() != successful_source {
+            return None;
+        }
+        if !before.ends_with(sentence) {
+            return None;
+        }
+        let length_utf16 = sentence.encode_utf16().count();
+        let location_utf16 = selection_location_utf16.checked_sub(length_utf16)?;
+        Some(ReplacementPlan {
+            location_utf16,
+            length_utf16,
+            original: sentence.to_owned(),
+        })
     }
 }
 

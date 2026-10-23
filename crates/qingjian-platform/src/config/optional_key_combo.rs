@@ -21,3 +21,16 @@ pub(super) fn serialize<S: Serializer>(
 ) -> Result<S::Ok, S::Error> {
     serializer.serialize_str(&combo.map(|key| key.key_string()).unwrap_or_default())
 }
+
+/// 实时翻译动作只占用字母组合，不能抢译词与删候选的修饰键加数字。
+pub(super) fn deserialize_letter<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<KeyCombo>, D::Error> {
+    let combo = deserialize(deserializer)?;
+    match combo {
+        Some(key) if !key.key.is_ascii_alphabetic() => Err(serde::de::Error::custom(
+            "live translation shortcut requires modifiers and an ASCII letter",
+        )),
+        _ => Ok(combo),
+    }
+}

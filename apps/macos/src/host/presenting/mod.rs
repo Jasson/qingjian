@@ -2,6 +2,7 @@
 
 mod notice;
 mod panel;
+pub(super) mod preedit;
 mod translation_job;
 
 pub(super) use notice::Notice;
@@ -136,12 +137,11 @@ impl Host {
         // 页上的译词告诉 Engine：用户上屏那一刻它们在屏幕上，算「见过」（词汇记录）；窗口收起时传空
         self.engine
             .note_displayed(cells.iter().copied().filter_map(Cell::candidate));
-        // 配置成只在行内显示时，窗口顶部不画拼音行
-        let preedit = self
-            .preedit_mode
-            .in_window()
-            .then(|| self.session.preedit.clone())
-            .flatten();
+        let preedit = preedit::candidate_preedit(
+            self.preedit_mode,
+            self.terminal_draft_active(),
+            self.session.preedit.as_ref(),
+        );
         if rows.is_empty() && self.session.preedit.is_none() {
             self.window.hide();
             self.preview_live_translation();
@@ -164,6 +164,7 @@ impl Host {
             status: self.status.clone(),
             mode: self.input_mode(),
             panel: None,
+            actions: Vec::new(),
         };
         self.window.show(frame, self.anchor);
         self.preview_live_translation();

@@ -114,10 +114,15 @@ macOS 与 Windows 缺省勾选单击 Shift；macOS 同时保留 Caps Lock 状态
 | 标题 | 控件 | 配置 | ⓘ |
 |---|---|---|---|
 | 实时中英互译 | 开关 | `live_translation.enabled` | 已上屏的本句文字与高亮候选一起预译，独立悬浮条显示，保留字词释义 |
+| 终端译文上屏（草稿模式） | 开关，缺省关，依赖实时翻译启用 | `live_translation.terminal_draft` | 仅系统 Terminal：原文先留在输入法，确认后输出译文或原文；有草稿时 Enter 默认输出原文，Esc 默认整稿取消；输出清空后 Enter 正常提交 |
+| 允许用译文替换选中内容 | 开关，缺省关 | `live_translation.allow_replace` | 先取得译文再选中完全对应的原文，手动替换，不重新调用模型；终端仅复制 |
+| 替换快捷键 | 「修改替换快捷键」按钮 | 无新增配置 | 导航到已有快捷键页，并滚动、高亮「用实时译文替换选中内容」录制器 |
 | 本机服务地址 | 单行输入 | `live_translation.base_url` | 只允许本机 Ollama，不使用云服务的地址与密钥 |
 | 本地翻译模型 | 单行输入 | `live_translation.model` | 默认 `maternion/hy-mt2:1.8b`，需先下载 |
 
-输入框按 Enter 保存、Esc 取消。默认关闭，地址 `http://localhost:11434`，防抖 180 ms、超时 5000 ms；后两项仅配置文件提供，不增加常用设置负担。此分节与 `[predict]` 独立，服务不可用不阻塞输入、不回退到云端。翻译固定中英互译，不受字词释义的学习语言影响。
+输入框按 Enter 保存、Esc 取消。默认关闭，地址 `http://localhost:11434`，防抖 180 ms、超时 5000 ms；后两项仅配置文件提供，不增加常用设置负担。快捷键页的本地实时翻译组提供 `shortcut.copy_live_translation` / `shortcut.replace_live_translation` 两个录键器，以及 `shortcut.insert_live_translation` 草稿输出录键器（默认 `control+option+v`），缺省 `control+option+c` / `control+option+r`；录制时 Backspace 保存空串禁用。三项为可选的修饰键加 ASCII 字母组合（配置与录制均拒绝数字或句号，避免抢占译词和删候选的数字键族），避免与云选区翻译、按需联想及另一操作撞键。「恢复默认」同时恢复这些键。替换只使用同会话最近成功译文，要求选区完整文本与其源文完全一致；无选区或不匹配时拒绝，不重新调用模型，不能将整句译文替换一个词。鼠标选区保留该缓存，焦点、应用、配置与私密状态变化清除。
+
+此分节与 `[predict]` 独立，服务不可用不阻塞输入、不回退到云端。翻译固定中英互译，不受字词释义的学习语言影响。
 
 **状态条**（只有 Windows）：悬浮状态条，开关，`status_bar.enabled`。以前放在「候选窗口」页，可它显示和切换的是中 / 英与标点。
 
@@ -293,3 +298,8 @@ Windows 和 Linux 以前没有这一页，这次都有了。
 ## 待定
 
 - macOS 输入法菜单里的「模糊音」子菜单保留：设置里它已经不是单独一页了，菜单里留着反倒是最快的入口。
+
+
+Terminal 草稿增加 `shortcut.insert_original` / `shortcut.cancel_draft` 两个 `Option<DraftShortcut>` 设置，缺省 `enter` / `escape`，空串禁用。`DraftShortcut` 仅允许无修饰 Enter／Esc 或修饰键加 ASCII 字母，普通 `KeyCombo` 不放宽。设置录制器仅这两项启用 `KeyRecorder::allow_escape(true)`，Esc 交给录制回调，blur 仍取消；原有录制器 Esc 行为保持。动作间及已有译文输出、复制、替换、选区翻译、AI 联想组合冲突时拒绝保存；手改配置由壳用 `draft_shortcuts_conflict` 防止抢占：冲突时停用两个新动作，原有组合键照常。恢复默认会将这两项写回缺省值；本次实现不自动改写用户现有配置。
+
+Terminal 草稿模式以独立 `TerminalDraft` 能力项登记 macOS 支持、Windows／Linux 待实现；开关与输出快捷键不改变配置键名的单一事实源。自绘动作目标新增 `InsertTranslation`／`InsertOriginal`／`CancelDraft`，与复制组成四按钮；pending 时只禁用输出译文，保留手动原文兜底与取消。两种输出都经过共享单行控制字符规范化，不直接发送回车；新模式默认关闭，微信等普通应用继续既有路径。

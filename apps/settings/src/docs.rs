@@ -91,6 +91,48 @@ const LINKS: &[(PageId, &str, &str, &str)] = &[
     ),
     (PageId::Language, "Shift + 字母", SETTINGS, "中英文"),
     (
+        PageId::Shortcuts,
+        "输出终端草稿原文",
+        "input/live-translation",
+        "终端译文上屏（草稿模式）",
+    ),
+    (
+        PageId::Shortcuts,
+        "取消终端整段草稿",
+        "input/live-translation",
+        "终端译文上屏（草稿模式）",
+    ),
+    (
+        PageId::Language,
+        "终端译文上屏（草稿模式）",
+        "input/live-translation",
+        "终端译文上屏（草稿模式）",
+    ),
+    (
+        PageId::Shortcuts,
+        "输出终端草稿译文",
+        "input/live-translation",
+        "终端译文上屏（草稿模式）",
+    ),
+    (
+        PageId::Language,
+        "允许用译文替换选中内容",
+        "input/live-translation",
+        "复制与手动替换",
+    ),
+    (
+        PageId::Shortcuts,
+        "复制实时译文",
+        "input/live-translation",
+        "复制与手动替换",
+    ),
+    (
+        PageId::Shortcuts,
+        "用实时译文替换选中内容",
+        "input/live-translation",
+        "复制与手动替换",
+    ),
+    (
         PageId::Language,
         "实时中英互译",
         "input/live-translation",

@@ -1,11 +1,11 @@
 use qingjian_core::ModeKeys;
 use serde::{Deserialize, Serialize};
 
-use super::PageKeys;
 use super::highlight_keys::HighlightKeys;
 use super::key_combo::KeyCombo;
 use super::modifiers::Modifiers;
 use super::switch_key::SwitchKeys;
+use super::{DraftShortcut, PageKeys};
 
 /// 配置文件 `[shortcut]` 分节：前缀模式键（Core 的 [`ModeKeys`]）加壳层的修饰键组合。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -36,6 +36,35 @@ pub struct ShortcutConfig {
 
     /// 把应用里选中的文字译成学习语言（需要云服务开着）。
     pub translate_selection: KeyCombo,
+
+    /// macOS：复制当前实时译文，空串禁用。
+    #[serde(
+        deserialize_with = "super::optional_key_combo::deserialize_letter",
+        serialize_with = "super::optional_key_combo::serialize"
+    )]
+    pub copy_live_translation: Option<KeyCombo>,
+
+    /// macOS：手动以已有实时译文替换完全匹配的选中原文，空串禁用。
+    #[serde(
+        deserialize_with = "super::optional_key_combo::deserialize_letter",
+        serialize_with = "super::optional_key_combo::serialize"
+    )]
+    pub replace_live_translation: Option<KeyCombo>,
+
+    /// macOS Terminal 草稿模式：手动输出最新整段译文，空串禁用。
+    #[serde(
+        deserialize_with = "super::optional_key_combo::deserialize_letter",
+        serialize_with = "super::optional_key_combo::serialize"
+    )]
+    pub insert_live_translation: Option<KeyCombo>,
+
+    /// Terminal 草稿：输出已确认文字加未选原始按键，空串禁用。
+    #[serde(with = "super::draft_shortcut")]
+    pub insert_original: Option<DraftShortcut>,
+
+    /// Terminal 草稿：一次取消整段草稿与拼音，空串禁用。
+    #[serde(with = "super::draft_shortcut")]
+    pub cancel_draft: Option<DraftShortcut>,
 
     /// Windows 组句中按需调用 AI（缺省 Ctrl+Alt+J）。
     pub predict: KeyCombo,
@@ -71,6 +100,20 @@ impl Default for ShortcutConfig {
             translation,
             translation_second,
             translate_selection,
+            copy_live_translation: Some(KeyCombo {
+                key: 'c',
+                ..KeyCombo::TRANSLATE_DEFAULT
+            }),
+            replace_live_translation: Some(KeyCombo {
+                key: 'r',
+                ..KeyCombo::TRANSLATE_DEFAULT
+            }),
+            insert_live_translation: Some(KeyCombo {
+                key: 'v',
+                ..KeyCombo::TRANSLATE_DEFAULT
+            }),
+            insert_original: Some(DraftShortcut::Enter),
+            cancel_draft: Some(DraftShortcut::Escape),
             predict: KeyCombo::PREDICT_DEFAULT,
             delete_candidate: Modifiers::SHIFT,
         }
@@ -78,6 +121,29 @@ impl Default for ShortcutConfig {
 }
 
 impl ShortcutConfig {
+    /// 手改配置的草稿动作冲突时交由壳禁用，不能抢走另一动作或既有组合。
+    pub fn draft_shortcuts_conflict(&self) -> bool {
+        if self.insert_original.is_some() && self.insert_original == self.cancel_draft {
+            return true;
+        }
+        [self.insert_original, self.cancel_draft]
+            .into_iter()
+            .flatten()
+            .any(|value| {
+                let DraftShortcut::Combo(combo) = value else {
+                    return false;
+                };
+                [
+                    Some(self.translate_selection),
+                    Some(self.predict),
+                    self.copy_live_translation,
+                    self.replace_live_translation,
+                    self.insert_live_translation,
+                ]
+                .contains(&Some(combo))
+            })
+    }
+
     /// 删候选的修饰键；为空或与任一组译词键撞了就退回缺省。
     pub fn delete_keys(&self) -> Modifiers {
         let (first, second) = self.translation_keys();

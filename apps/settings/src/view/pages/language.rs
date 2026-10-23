@@ -1,7 +1,7 @@
 //! 「中英文」页：英文模式（开关、切换键、默认英文与按应用记住、英文候选、Shift + 字母），标点与中西文空格，本地实时翻译，悬浮状态条。
 
 use bamboo_slip::taffy::{FlexDirection, NodeId, Style};
-use bamboo_slip::{Checkbox, RenderError, SettingRow, Ui, Visual, group, section_title};
+use bamboo_slip::{Button, Checkbox, RenderError, SettingRow, Ui, Visual, group, section_title};
 use qingjian_platform::{DEFAULT_ENGLISH_CANDIDATES_ON, ShiftLetter, SwitchKey};
 
 use crate::message::{FieldId, Message};
@@ -156,7 +156,7 @@ pub fn language(ui: &mut Ui<Message>, page: &Page) -> Result<Vec<NodeId>, Render
 
     if Feature::LiveTranslation.here() {
         let live = &config.live_translation;
-        let rows = [
+        let mut rows = vec![
             toggle_info(
                 ui,
                 page,
@@ -168,6 +168,25 @@ pub fn language(ui: &mut Ui<Message>, page: &Page) -> Result<Vec<NodeId>, Render
                 live.enabled,
                 false,
             )?,
+            toggle_info(
+                ui,
+                page,
+                "允许用译文替换选中内容",
+                Some(
+                    "先取得整句译文，再选中与原文完全一致的文字，点击按钮或按快捷键确认；不重新翻译；系统 Terminal 使用另行开启的草稿模式",
+                ),
+                ("live_translation", "allow_replace"),
+                live.allow_replace,
+                !live.enabled,
+            )?,
+            SettingRow::new("替换快捷键")
+                .control(Button::new("修改替换快捷键").build(
+                    ui,
+                    theme,
+                    "edit-live-replacement-shortcut",
+                    Message::LiveTranslationShortcuts,
+                )?)
+                .build(ui, theme)?,
             text_field(
                 ui,
                 page,
@@ -185,6 +204,19 @@ pub fn language(ui: &mut Ui<Message>, page: &Page) -> Result<Vec<NodeId>, Render
                 "maternion/hy-mt2:1.8b",
             )?,
         ];
+        if Feature::TerminalDraft.here() {
+            rows.insert(1, toggle_info(
+                ui,
+                page,
+                "终端译文上屏（草稿模式）",
+                Some(
+                    "仅系统 Terminal：原文先留在输入法草稿中，确认后输出译文或原文；不会自动执行；默认回车输出已确认原文加未选按键，Esc一次取消整稿，可改快捷键",
+                ),
+                ("live_translation", "terminal_draft"),
+                live.terminal_draft,
+                !live.enabled,
+            )?);
+        }
         out.push(section_title(ui, theme, "本地实时翻译")?);
         out.push(group(ui, theme, &rows)?);
     }

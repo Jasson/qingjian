@@ -3,6 +3,7 @@ mod apps;
 mod aux_code;
 mod candidate_renderer;
 mod dictionaries;
+mod draft_shortcut;
 mod emoji_count;
 mod font_size;
 mod general;
@@ -42,6 +43,7 @@ pub use apps::{
 pub use aux_code::AuxCodeConfig;
 pub use candidate_renderer::CandidateRenderer;
 pub use dictionaries::{DEFAULT_DOMAINS, DictionariesConfig};
+pub use draft_shortcut::DraftShortcut;
 pub use emoji_count::EmojiCount;
 pub use font_size::FontSize;
 pub use general::{
@@ -326,6 +328,15 @@ system_text_replacements = true
 # enabled = true    # 是否启用；停用仍保留位置
 
 [shortcut]
+# macOS：复制浮窗中当前显示的完整实时译文；用已有译文替换完全匹配的选中原文，后者还需开启 [live_translation] allow_replace
+# 空串可禁用；替换始终需点击按钮或按快捷键手动确认，不自动替换
+copy_live_translation = "control+option+c"
+replace_live_translation = "control+option+r"
+# macOS Terminal 草稿模式：手动输出最新整段译文到应用，不自动执行；空串禁用
+insert_live_translation = "control+option+v"
+# Terminal 草稿：输出原文（已确认文字+未选原始按键），或一次取消整段；只接受 enter / escape 或修饰键+字母，空串禁用
+insert_original = "enter"
+cancel_draft = "escape"
 # Windows：切换当前模式的全 / 半角标点；空串禁用，可设为 "ctrl+." 或其他修饰键加字母、数字、句号
 toggle_punctuation = ""
 # Windows：主翻页键之外同时启用的键对，可多选，如 ["[]", ",.", "-="]
@@ -381,6 +392,10 @@ enabled = true
 [live_translation]
 # 本地实时中英互译（目前仅 macOS）：已上屏的本句文字加当前高亮候选，译文显示在独立悬浮条；保留字词释义
 enabled = false
+# 允许手动用已有译文替换完全匹配的选中原文；无选区、不匹配或应用不支持时拒绝，不重新翻译，复制不受此开关限制
+allow_replace = false
+# 系统 Terminal 专用：先在输入法内保留原文草稿，再手动输出译文或原文；同时需 enabled=true，默认不改变正常输入
+terminal_draft = false
 # 本机 Ollama 服务地址和模型；与云联想独立，不需要 API 密钥，不会回退到云服务
 base_url = "http://localhost:11434"
 model = "maternion/hy-mt2:1.8b"
