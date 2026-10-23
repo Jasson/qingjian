@@ -84,7 +84,7 @@ define_class!(
                     let staged = client.stages_output();
                     let has_pending = host::with(|h| !h.live.draft.source().is_empty() || !h.engine.composition().is_empty()).unwrap_or(true);
                     let flags = event.modifierFlags();
-                    let route = DraftKeyRoute::for_key(event.keyCode(), flags.contains(NSEventModifierFlags::Command) || flags.contains(NSEventModifierFlags::Control), has_pending);
+                    let mut route = DraftKeyRoute::for_key(event.keyCode(), flags.contains(NSEventModifierFlags::Command) || flags.contains(NSEventModifierFlags::Control), has_pending);
                     if staged && event.r#type() == NSEventType::KeyDown && event.keyCode() == 51 && !event.isARepeat() {
                         let metadata = host::with(|h| (h.engine.composition().text().chars().count(), h.live.draft.committed().chars().count(), h.live.paused));
                         tracing::info!(target: "live_translation", key_code = 51, route = ?route,
@@ -92,7 +92,7 @@ define_class!(
                             command = flags.contains(NSEventModifierFlags::Command), control = flags.contains(NSEventModifierFlags::Control),
                             option = flags.contains(NSEventModifierFlags::Option), "收到草稿退格键");
                     }
-                    let handled = catch_panic("handleEvent", || self.dispatch_event(event, client, route))
+                    let handled = catch_panic("handleEvent", || self.dispatch_event(event, client, &mut route))
                         .unwrap_or_else(|| {
                             recover_from_panic(Some(client));
                             false
@@ -297,7 +297,7 @@ impl QingjianInputController {
         &self,
         event: &NSEvent,
         client: TextClient<'_>,
-        draft_route: DraftKeyRoute,
+        draft_route: &mut DraftKeyRoute,
     ) -> bool {
         if secure_input::enabled() {
             backspace::trace_rejection(
@@ -393,7 +393,7 @@ impl QingjianInputController {
         if let Some(consumed) = self.handle_draft_shortcut(event, client) {
             return consumed;
         }
-        if client.stages_output() && draft_route == DraftKeyRoute::PassTerminal {
+        if client.stages_output() && *draft_route == DraftKeyRoute::PassTerminal {
             backspace::trace_rejection(key, true, event.isARepeat(), "empty_draft_passthrough");
             return false;
         }
@@ -425,6 +425,26 @@ impl QingjianInputController {
             && let Some(consumed) = self.handle_panel_key(event, key, pressed, client)
         {
             return consumed;
+        }
+        if key == 49 && pressed.is_empty() {
+            let text = event.characters().map(|text| text.to_string());
+            let pass = host::with(|h| {
+                DraftKeyRoute::passes_empty_space(
+                    key,
+                    text.as_deref(),
+                    pressed.is_empty(),
+                    h.terminal_draft_active(),
+                    &h.live.draft.source(),
+                    !h.engine.composition().is_empty(),
+                    h.translation.is_some() || h.engine.symbol_panel().is_some(),
+                )
+            })
+            .unwrap_or(false);
+            if pass && self.is_current_controller() {
+                // 外层同样需要明确透传，否则草稿兜底仍会把这个空格吞掉。
+                *draft_route = DraftKeyRoute::PassTerminal;
+                return false;
+            }
         }
         // 高亮还在第一个时按 ↑ 打开符号面板；长按连发的不算，免得往回翻过头弹出来
         if key == 126

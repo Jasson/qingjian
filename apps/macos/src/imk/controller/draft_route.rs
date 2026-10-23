@@ -10,6 +10,25 @@ pub(super) enum DraftKeyRoute {
 }
 
 impl DraftKeyRoute {
+    /// 只按当前状态放行真空态单空格；空白草稿也属于已有内容，不能用 trim 判断。
+    pub fn passes_empty_space(
+        key: u16,
+        text: Option<&str>,
+        unmodified: bool,
+        draft_active: bool,
+        draft_source: &str,
+        composing: bool,
+        occupied: bool,
+    ) -> bool {
+        key == 49
+            && text == Some(" ")
+            && unmodified
+            && draft_active
+            && draft_source.is_empty()
+            && !composing
+            && !occupied
+    }
+
     pub fn for_key(key: u16, command_or_control: bool, has_pending_text: bool) -> Self {
         let terminal_command = command_or_control
             || matches!(
@@ -62,5 +81,97 @@ mod tests {
                 assert!(route.consume_fallback(false, true, true));
             }
         }
+    }
+
+    #[test]
+    fn only_a_plain_single_space_in_an_unoccupied_truly_empty_terminal_draft_can_pass() {
+        assert!(DraftKeyRoute::passes_empty_space(
+            49,
+            Some(" "),
+            true,
+            true,
+            "",
+            false,
+            false
+        ));
+        for text in [None, Some(""), Some("  "), Some("\u{a0}"), Some("a")] {
+            assert!(!DraftKeyRoute::passes_empty_space(
+                49, text, true, true, "", false, false
+            ));
+        }
+        assert!(!DraftKeyRoute::passes_empty_space(
+            0,
+            Some(" "),
+            true,
+            true,
+            "",
+            false,
+            false
+        ));
+        assert!(!DraftKeyRoute::passes_empty_space(
+            49,
+            Some(" "),
+            false,
+            true,
+            "",
+            false,
+            false
+        ));
+        assert!(!DraftKeyRoute::passes_empty_space(
+            49,
+            Some(" "),
+            true,
+            false,
+            "",
+            false,
+            false
+        ));
+        assert!(!DraftKeyRoute::passes_empty_space(
+            49,
+            Some(" "),
+            true,
+            true,
+            "",
+            true,
+            false
+        ));
+        assert!(!DraftKeyRoute::passes_empty_space(
+            49,
+            Some(" "),
+            true,
+            true,
+            "",
+            false,
+            true
+        ));
+        for source in ["已有草稿", " ", "\n"] {
+            assert!(!DraftKeyRoute::passes_empty_space(
+                49,
+                Some(" "),
+                true,
+                true,
+                source,
+                false,
+                false
+            ));
+        }
+    }
+
+    #[test]
+    fn late_space_passthrough_must_replace_the_initial_printable_route_for_outer_fallback() {
+        let initial = DraftKeyRoute::for_key(49, false, false);
+        assert_eq!(initial, DraftKeyRoute::StageInput);
+        assert!(initial.consume_fallback(true, true, false));
+        let current =
+            if DraftKeyRoute::passes_empty_space(49, Some(" "), true, true, "", false, false) {
+                DraftKeyRoute::PassTerminal
+            } else {
+                initial
+            };
+        assert!(!current.consume_fallback(true, true, false));
+        // 已有草稿中的空格仍是正文输入；拼音中的空格也不能透传。
+        let active = DraftKeyRoute::for_key(49, false, true);
+        assert_eq!(active, DraftKeyRoute::StageInput);
+        assert!(active.consume_fallback(true, true, false));
     }
 }
