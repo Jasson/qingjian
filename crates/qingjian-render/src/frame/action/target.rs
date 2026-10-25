@@ -11,6 +11,10 @@ pub enum ActionTarget {
     InsertOriginal,
 
     CancelDraft,
+
+    RestoreDraft,
+
+    OpenTranslationDraft,
 }
 
 impl ActionTarget {
@@ -21,6 +25,8 @@ impl ActionTarget {
             Self::InsertTranslation => "输出译文",
             Self::InsertOriginal => "输出原文",
             Self::CancelDraft => "取消草稿",
+            Self::RestoreDraft => "恢复草稿",
+            Self::OpenTranslationDraft => "打开草稿窗",
         }
     }
 }

@@ -22,10 +22,20 @@ impl Settings {
             FieldId::ApiKey => String::new(),
             FieldId::LiveBaseUrl => self.config.live_translation.base_url.clone(),
             FieldId::LiveModel => self.config.live_translation.model.clone(),
+            FieldId::LiveDraftExcludedApps => {
+                self.config.live_translation.draft_excluded_apps.join("\n")
+            }
             FieldId::VocabularySearch => String::new(),
             FieldId::PhraseCode | FieldId::PhraseText => return,
         };
-        self.fields.insert(id, TextEdit::new(value));
+        self.fields.insert(
+            id,
+            if id == FieldId::LiveDraftExcludedApps {
+                TextEdit::multiline(value)
+            } else {
+                TextEdit::new(value)
+            },
+        );
     }
 
     /// 存一个输入框：没改、清空了都不存（清空等于不改）。
@@ -50,6 +60,29 @@ impl Settings {
                 if !text.is_empty() && text != *current {
                     self.write(section, id.key(), text);
                 }
+            }
+            FieldId::LiveDraftExcludedApps => {
+                let mut values = Vec::new();
+                for value in text
+                    .lines()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                {
+                    if value.contains('*') || value.chars().any(char::is_whitespace) {
+                        self.notice = Some((
+                            "draft-apps",
+                            "未保存：每行填写一个完整应用标识，不含空格或通配符".to_owned(),
+                        ));
+                        return;
+                    }
+                    if !values.iter().any(|item| item == value) {
+                        values.push(value.to_owned());
+                    }
+                }
+                if values != self.config.live_translation.draft_excluded_apps {
+                    self.write_list("live_translation", "draft_excluded_apps", &values);
+                }
+                self.notice = Some(("draft-apps", "排除列表已保存".to_owned()));
             }
             FieldId::PhraseCode | FieldId::PhraseText | FieldId::VocabularySearch => return,
             FieldId::ApiKey if text.is_empty() => {}

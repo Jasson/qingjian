@@ -1,6 +1,7 @@
 //! 快捷键的 ABC 物理键码与 Carbon 修饰位；owner 区分不同 IMK 输入会话。
 
 use qingjian_platform::KeyCombo;
+use qingjian_predict::live::LiveTranslationConfig;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct Binding {
@@ -14,17 +15,16 @@ impl Binding {
         combo: Option<KeyCombo>,
         owner: Option<usize>,
         application: Option<&str>,
-        enabled: bool,
-        draft_enabled: bool,
+        config: &LiveTranslationConfig,
     ) -> Option<Self> {
-        if !enabled || !draft_enabled || application != Some("com.apple.Terminal") {
+        if !crate::imk::draft_policy::allowed(config, application, false) {
             return None;
         }
         Some(Self {
             combo: combo?,
             owner: owner?,
         })
-        .filter(|binding| binding.valid())
+        .filter(|binding| binding.owner != 0 && binding.valid())
     }
 
     pub fn key_code(self) -> Option<u32> {

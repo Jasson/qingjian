@@ -26,7 +26,7 @@ thread_local! {
 
 pub(super) fn arm(controller: &QingjianInputController) {
     let _ = catch_unwind(AssertUnwindSafe(|| {
-        let eligible = host::with(|h| h.terminal_draft_active()).unwrap_or(false);
+        let eligible = host::with(|h| h.draft_active()).unwrap_or(false);
         if !eligible {
             LIMITER.with(|limiter| limiter.borrow_mut().stop());
             return;

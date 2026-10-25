@@ -48,3 +48,34 @@ fn confirmed_output_is_one_plain_insert_without_line_breaks_or_followup_marked()
     assert!(client.insert_confirmed_draft("Hello. Next sentence."));
     assert_eq!(&*mock.ivars().borrow(), &["insert:Hello. Next sentence."]);
 }
+
+#[test]
+fn event_diagnostics_count_real_gated_writes_without_changing_client_message_count() {
+    let mock = SelectionClient::new();
+    let client = TextClient {
+        object: &mock,
+        stage_output: true,
+    };
+    let counts = crate::imk::draft_diagnostics::capture_writes(|| {
+        client.set_marked_text("pending", 7);
+        client.set_marked_text("", 0);
+        client.insert_text("ordinary");
+        client.replace_range("replacement", NSRange::new(0, 1));
+        assert!(!client.insert_confirmed_draft("bad\ntext"));
+        assert!(client.insert_confirmed_draft("confirmed"));
+    });
+    assert_eq!(counts, [(2, 2, 0), (2, 2, 0), (2, 1, 1), (1, 1, 0)]);
+    assert_eq!(&*mock.ivars().borrow(), &["insert:confirmed"]);
+}
+
+#[test]
+fn window_only_non_draft_empty_marked_request_is_distinguished_from_a_blocked_draft_write() {
+    let mock = SelectionClient::new();
+    let client = TextClient {
+        object: &mock,
+        stage_output: false,
+    };
+    let counts = crate::imk::draft_diagnostics::capture_writes(|| client.set_marked_text("", 0));
+    assert_eq!(counts, [(1, 0, 1), (0, 0, 0), (0, 0, 0), (1, 0, 1)]);
+    assert_eq!(&*mock.ivars().borrow(), &["mark:"]);
+}

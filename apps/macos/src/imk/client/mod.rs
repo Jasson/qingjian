@@ -4,12 +4,14 @@
 
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, Bool};
-use objc2::{msg_send, sel};
+use objc2::{Message, msg_send, sel};
 use objc2_foundation::{
     NSAttributedString, NSDictionary, NSNotFound, NSPoint, NSRange, NSRect, NSString,
 };
 use qingjian_core::SurroundingText;
 use qingjian_predict::live::context::{ContextRange, ContextSnapshot};
+
+use crate::imk::draft_diagnostics::{self, WriteKind};
 
 mod bounded_read;
 pub use bounded_read::BoundedRead;
@@ -33,13 +35,23 @@ impl<'a> TextClient<'a> {
         }
     }
 
+    pub(crate) fn retained_object(&self) -> Retained<AnyObject> {
+        self.object.retain()
+    }
+
     /// 设置 marked text（带下划线的未上屏文本），光标放在第 `cursor` 个字符处。空串等于清除。
     pub fn set_marked_text(&self, text: &str, cursor: usize) {
-        if self.stages_output() {
+        draft_diagnostics::write_marked(text.is_empty(), "attempt");
+        if crate::imk::editor::session_owned()
+            || self.stages_output()
+            || crate::imk::editor::session_owned()
+        {
+            draft_diagnostics::write_marked(text.is_empty(), "blocked");
             return;
         }
         let string = NSString::from_str(text);
         let cursor = NSRange::new(cursor.min(text.chars().count()), 0);
+        draft_diagnostics::write_marked(text.is_empty(), "sent");
         unsafe {
             let _: () = msg_send![
                 self.object,
@@ -76,16 +88,24 @@ impl<'a> TextClient<'a> {
     }
 
     fn commit_with(&self, text: &str, stage: impl FnOnce(&str)) {
+        if crate::imk::editor::session_owned() {
+            return;
+        }
         stage(text);
         self.insert_text(text);
     }
 
     /// 上屏。
     pub fn insert_text(&self, text: &str) {
-        if self.stages_output() {
+        draft_diagnostics::write(WriteKind::Ordinary, "attempt");
+        if crate::imk::editor::session_owned()
+            || self.stages_output()
+            || crate::imk::editor::session_owned()
+        {
+            draft_diagnostics::write(WriteKind::Ordinary, "blocked");
             return;
         }
-        self.insert_unchecked(text);
+        self.insert_unchecked(text, WriteKind::Ordinary);
     }
 
     pub fn stages_output(&self) -> bool {
@@ -94,17 +114,20 @@ impl<'a> TextClient<'a> {
 
     /// 唯一草稿确认写入口；调用方须先核验并消耗对应草稿，不能借此提交普通原文。
     pub fn insert_confirmed_draft(&self, text: &str) -> bool {
+        draft_diagnostics::write(WriteKind::Confirmed, "attempt");
         if qingjian_predict::live::normalize_terminal_output(text).as_deref() != Some(text)
             || text.trim().is_empty()
         {
+            draft_diagnostics::write(WriteKind::Confirmed, "blocked");
             return false;
         }
-        self.insert_unchecked(text);
+        self.insert_unchecked(text, WriteKind::Confirmed);
         true
     }
 
-    fn insert_unchecked(&self, text: &str) {
+    fn insert_unchecked(&self, text: &str, kind: WriteKind) {
         let string = NSString::from_str(text);
+        draft_diagnostics::write(kind, "sent");
         unsafe {
             let _: () =
                 msg_send![self.object, insertText: &*string, replacementRange: NO_REPLACEMENT];
@@ -145,10 +168,19 @@ impl<'a> TextClient<'a> {
 
     /// 用 `text` 替换应用里 `range` 那段文字（翻译结果替换选区）。
     pub fn replace_range(&self, text: &str, range: NSRange) {
-        if self.stages_output() {
+        if crate::imk::editor::session_owned() {
+            return;
+        }
+        draft_diagnostics::write(WriteKind::Ordinary, "attempt");
+        if crate::imk::editor::session_owned()
+            || self.stages_output()
+            || crate::imk::editor::session_owned()
+        {
+            draft_diagnostics::write(WriteKind::Ordinary, "blocked");
             return;
         }
         let string = NSString::from_str(text);
+        draft_diagnostics::write(WriteKind::Ordinary, "sent");
         unsafe {
             let _: () = msg_send![self.object, insertText: &*string, replacementRange: range];
         }

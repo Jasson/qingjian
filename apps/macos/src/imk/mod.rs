@@ -6,6 +6,10 @@
 pub(crate) mod backspace_tap;
 mod client;
 mod controller;
+pub(crate) mod draft_diagnostics;
+pub(crate) mod draft_policy;
+pub(crate) mod editor;
+pub(crate) mod frontmost;
 pub(crate) mod hotkey;
 mod mode_switch;
 pub mod modifiers;

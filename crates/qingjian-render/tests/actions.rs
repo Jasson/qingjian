@@ -143,3 +143,57 @@ fn draft_toolbar_keeps_four_separate_actions_inside_the_image() {
             .any(|hit| hit.target == HitTarget::Action(ActionTarget::InsertTranslation))
     );
 }
+
+#[test]
+fn restore_draft_has_a_distinct_semantic_hit_and_disabled_restore_cannot_overwrite_active_input() {
+    assert_eq!(ActionTarget::RestoreDraft.label(), "恢复草稿");
+    let mut renderer = Renderer::new(FontLibrary::system("zh-CN").unwrap());
+    let mut frame = Frame {
+        rows: vec![Row::plain(0, "当前应用有草稿可恢复")],
+        actions: vec![Action {
+            target: ActionTarget::RestoreDraft,
+            enabled: true,
+        }],
+        ..Frame::default()
+    };
+    let output = renderer
+        .render(&frame, Layout::Vertical, &Theme::light(), 2.0)
+        .unwrap();
+    assert_eq!(output.hits.len(), 1);
+    let hit = &output.hits[0];
+    assert_eq!(hit.target, HitTarget::Action(ActionTarget::RestoreDraft));
+    assert_eq!(
+        output.hit_at(
+            (hit.x + hit.width / 2.0) / 2.0,
+            (hit.y + hit.height / 2.0) / 2.0
+        ),
+        Some(hit.target)
+    );
+    frame.actions[0].enabled = false;
+    renderer.forget();
+    let disabled = renderer
+        .render(&frame, Layout::Vertical, &Theme::light(), 2.0)
+        .unwrap();
+    assert!(disabled.hits.is_empty());
+}
+
+#[test]
+fn opening_the_focused_draft_is_a_distinct_action_with_an_independent_hit() {
+    assert_eq!(ActionTarget::OpenTranslationDraft.label(), "打开草稿窗");
+    let mut renderer = Renderer::new(FontLibrary::system("zh-CN").unwrap());
+    let frame = Frame {
+        actions: vec![Action {
+            target: ActionTarget::OpenTranslationDraft,
+            enabled: true,
+        }],
+        ..Frame::default()
+    };
+    let output = renderer
+        .render(&frame, Layout::Vertical, &Theme::light(), 2.0)
+        .unwrap();
+    assert_eq!(output.hits.len(), 1);
+    assert_eq!(
+        output.hits[0].target,
+        HitTarget::Action(ActionTarget::OpenTranslationDraft)
+    );
+}

@@ -15,6 +15,7 @@ impl QingjianInputController {
         pressed: Modifiers,
         typed: Option<char>,
         client: TextClient<'_>,
+        repeat: bool,
     ) -> Option<bool> {
         let action = host::with(|h| {
             if !h.live.active() {
@@ -22,16 +23,21 @@ impl QingjianInputController {
             }
             let shortcut = &h.settings.config().shortcut;
             let matches = |combo| shortcut_matches(combo, pressed, typed);
+            if !shortcut.open_translation_draft_conflicts()
+                && matches(shortcut.open_translation_draft)
+            {
+                return Some(ActionTarget::OpenTranslationDraft);
+            }
             // 手改配置也不能抢已有选区翻译与按需联想的组合键。
             if matches(Some(shortcut.translate_selection)) || matches(Some(shortcut.predict)) {
                 return None;
             }
-            if h.terminal_draft_active() && matches(shortcut.insert_live_translation) {
+            if h.draft_active() && matches(shortcut.insert_live_translation) {
                 Some(ActionTarget::InsertTranslation)
             } else if matches(shortcut.copy_live_translation) && h.live_copy_text().is_some() {
                 Some(ActionTarget::CopyTranslation)
             } else if matches(shortcut.replace_live_translation)
-                && !h.terminal_draft_active()
+                && !h.draft_active()
                 && h.settings.config().live_translation.allow_replace
                 && !h.live.source.is_empty()
             {
@@ -48,6 +54,12 @@ impl QingjianInputController {
                 return Some(true);
             }
             tracing::info!(target: "live_translation", source = "imk", reason = "fallback", "收到译文输出快捷键");
+        }
+        if action == ActionTarget::OpenTranslationDraft {
+            return Some(
+                repeat
+                    || crate::imk::editor::open(client, crate::imk::editor::OpenSource::Shortcut),
+            );
         }
         Some(self.perform_live_action(action, Some(client)))
     }
@@ -79,13 +91,26 @@ impl QingjianInputController {
         client: Option<TextClient<'_>>,
         expected: Option<OutputGuard<'_>>,
     ) -> bool {
-        if !self.is_current_controller() || secure_input::enabled() {
+        if (crate::imk::editor::session_owned() && action != ActionTarget::OpenTranslationDraft)
+            || !self.is_current_controller()
+            || secure_input::enabled()
+        {
             return false;
+        }
+        if action == ActionTarget::OpenTranslationDraft {
+            return client.is_some_and(|client| {
+                crate::imk::editor::open(client, crate::imk::editor::OpenSource::Button)
+            });
         }
         if let Some(client) = client
             && !self.sync_live_application(client)
         {
             return false;
+        }
+        if let Some(expected) = expected
+            && host::with(|h| expected.valid(h)) != Some(true)
+        {
+            return true;
         }
         match action {
             ActionTarget::CopyTranslation => {
@@ -110,24 +135,28 @@ impl QingjianInputController {
             }
             ActionTarget::InsertTranslation | ActionTarget::InsertOriginal => {
                 if let Some(client) = client {
-                    let _ = self.output_terminal_draft(
-                        client,
-                        action == ActionTarget::InsertOriginal,
-                        expected,
-                    );
+                    let _ =
+                        self.output_draft(client, action == ActionTarget::InsertOriginal, expected);
                 }
                 true
             }
             ActionTarget::CancelDraft => {
                 host::with(|h| {
-                    if h.terminal_draft_active() && expected.is_none_or(|guard| guard.valid(h)) {
-                        h.cancel_terminal_draft("draft_cancelled");
+                    if h.draft_active() && expected.is_none_or(|guard| guard.valid(h)) {
+                        h.cancel_draft("draft_cancelled");
                     }
                 });
                 true
             }
+            ActionTarget::OpenTranslationDraft => false,
+            ActionTarget::RestoreDraft => {
+                if let Some(client) = client {
+                    self.restore_saved_draft(client, expected);
+                }
+                true
+            }
             ActionTarget::ReplaceOriginal => {
-                if host::with(|h| h.terminal_draft_active()).unwrap_or(true) {
+                if host::with(|h| h.draft_active()).unwrap_or(true) {
                     host::with(|h| h.live_action_notice("草稿模式请使用输出译文或输出原文"));
                     return true;
                 }
@@ -137,102 +166,6 @@ impl QingjianInputController {
                 true
             }
         }
-    }
-
-    fn output_terminal_draft(
-        &self,
-        client: TextClient<'_>,
-        original: bool,
-        expected: Option<OutputGuard<'_>>,
-    ) -> Option<bool> {
-        let generation = expected.map(OutputGuard::generation);
-        let state = host::with(|h| {
-            if expected.is_some_and(|guard| !guard.valid(h)) {
-                tracing::info!(target: "live_translation", generation, reason = "input_changed", "草稿输出未执行");
-                return Err(());
-            }
-            let output = h.terminal_draft_output(original);
-            if output.is_none() {
-                tracing::info!(target: "live_translation", generation, reason = "draft_not_ready", "草稿输出未执行");
-                h.live_action_notice(if original {
-                    "原文草稿为空或含有不支持的控制字符，未输出"
-                } else {
-                    "请先选定全部原文，并等待当前整段译文；也可明确输出原文"
-                });
-            }
-            Ok(output.map(|text| (text, h.live_observation_token())))
-        })?;
-        let Ok(state) = state else { return Some(false) };
-        let Some((text, observation)) = state else {
-            return Some(true);
-        };
-        let application = client.bundle_identifier();
-        let frontmost = crate::imk::hotkey::terminal_is_frontmost();
-        if !frontmost
-            || !self.is_current_controller()
-            || secure_input::enabled()
-            || application.as_deref() != Some("com.apple.Terminal")
-        {
-            return Some(false);
-        }
-        let consumed = host::with(|h| {
-            if expected.is_some_and(|guard| !guard.valid(h)) {
-                return None;
-            }
-            if !observation.matches(&h.live_observation_token())
-                || h.terminal_draft_output(original).as_deref() != Some(text.as_str())
-            {
-                return None;
-            }
-            // 先消费草稿并使旧请求与点击失效，insertText 重入时不会再次输出同一段。
-            h.cancel_terminal_draft("draft_output_requested");
-            if let Some(OutputGuard::Tap(generation, serial, _)) = expected {
-                crate::imk::backspace_tap::action_consumed(generation, serial);
-            }
-            Some((h.live_observation_token(), h.settings.config().shortcut))
-        })?;
-        let Some((consumed_observation, consumed_shortcut)) = consumed else {
-            return Some(false);
-        };
-        let frontmost = crate::imk::hotkey::terminal_is_frontmost();
-        let unchanged = frontmost
-            && host::with(|h| {
-                consumed_observation.matches(&h.live_observation_token())
-                    && consumed_shortcut == h.settings.config().shortcut
-            })
-            .unwrap_or(false);
-        if unchanged && self.is_current_controller() && !secure_input::enabled() {
-            let requested = client.insert_confirmed_draft(&text);
-            tracing::info!(target: "live_translation", original, write_requested = requested,
-                "终端草稿确认输出");
-        }
-        Some(true)
-    }
-
-    pub(super) fn output_tapped_original(
-        &self,
-        client: TextClient<'_>,
-        guard: OutputGuard<'_>,
-    ) -> Option<bool> {
-        self.output_terminal_draft(client, true, Some(guard))
-    }
-
-    fn sync_live_application(&self, client: TextClient<'_>) -> bool {
-        let observation = host::with(|h| h.live_observation_token());
-        let Some(observation) = observation else {
-            return false;
-        };
-        let application = client.bundle_identifier();
-        if !self.is_current_controller() || secure_input::enabled() {
-            return false;
-        }
-        host::with(|h| {
-            if !observation.matches(&h.live_observation_token()) {
-                return false;
-            }
-            h.accept_live_application(application.as_deref())
-        })
-        .unwrap_or(false)
     }
 
     fn replace_live_translation(&self, client: TextClient<'_>) {
@@ -261,7 +194,8 @@ impl QingjianInputController {
             return;
         };
         let still_current = || {
-            self.is_current_controller()
+            !crate::imk::editor::session_owned()
+                && self.is_current_controller()
                 && !secure_input::enabled()
                 && host::with(|h| {
                     h.live_receipt_is_current(&receipt)

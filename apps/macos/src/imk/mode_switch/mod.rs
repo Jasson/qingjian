@@ -2,6 +2,7 @@
 
 use qingjian_platform::SwitchKeys;
 
+#[derive(Clone)]
 pub(super) struct ModeSwitch {
     enabled: bool,
 

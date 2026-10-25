@@ -32,7 +32,7 @@ fn down(state: &mut State<u64>) -> bool {
 }
 
 #[test]
-fn only_plain_backspace_in_the_bound_terminal_session_is_owned() {
+fn only_plain_backspace_in_the_bound_application_session_is_owned() {
     for flag in [1 << 18, 1 << 19, 1 << 20, 1 << 23] {
         let mut state = active();
         let mut key = event(&state, 10, 51, false);

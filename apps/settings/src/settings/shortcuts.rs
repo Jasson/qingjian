@@ -49,7 +49,17 @@ impl Settings {
                 );
             }
         }
-        if Feature::TerminalDraft.here() {
+        if Feature::FocusedDraftEditor.here() {
+            self.write(
+                "shortcut",
+                "open_translation_draft",
+                defaults
+                    .open_translation_draft
+                    .map(|combo| combo.key_string())
+                    .unwrap_or_default(),
+            );
+        }
+        if Feature::TranslationDraft.here() {
             for (key, value) in [
                 ("insert_original", defaults.insert_original),
                 ("cancel_draft", defaults.cancel_draft),

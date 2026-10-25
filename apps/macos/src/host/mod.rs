@@ -17,6 +17,8 @@ mod presenting;
 mod session;
 mod settings;
 
+use crate::imk::draft_diagnostics::snapshot::Snapshot;
+
 use std::cell::RefCell;
 use std::path::PathBuf;
 
@@ -228,8 +230,9 @@ pub fn with<R>(f: impl FnOnce(&mut Host) -> R) -> Option<R> {
                 .then(|| guard.as_ref().map(Host::live_observation_token))
                 .flatten();
             let backspace = guard.as_ref().and_then(|h| {
-                let configured =
-                    h.terminal_draft_active() && h.settings.config().live_translation.enabled;
+                let configured = h.draft_active()
+                    && h.settings.config().live_translation.enabled
+                    && !crate::imk::editor::session_owned();
                 (configured || crate::imk::backspace_tap::tracking()).then(|| {
                     (
                         h.live_observation_token(),
@@ -264,10 +267,26 @@ pub fn copy_text_to_pasteboard(text: &str) -> bool {
 
 /// 文本写入门禁在借用冲突时关闭输出，不能把 IMK 重入当成草稿模式关闭。
 pub(crate) fn stage_text_output() -> bool {
+    if crate::imk::secure_input::enabled() {
+        return false;
+    }
     HOST.with(|host| match host.try_borrow() {
-        Ok(guard) => guard
-            .as_ref()
-            .is_some_and(|h| h.terminal_draft_active() || !h.live.draft.source().is_empty()),
+        Ok(guard) => guard.as_ref().is_some_and(|h| h.draft_active()),
         Err(_) => true,
+    })
+}
+
+/// 仅读缓存；不经 with 发布原生观察状态，不请求客户端或采集正文。
+pub(crate) fn draft_diagnostic_snapshot() -> Option<Snapshot> {
+    HOST.with(|host| {
+        let guard = host.try_borrow().ok()?;
+        let h = guard.as_ref()?;
+        Some(Snapshot {
+            wechat: h.engine.application() == Some("com.tencent.xinWeChat"),
+            staged: h.draft_active(),
+            epoch: h.live.epoch,
+            composing: !h.engine.composition().is_empty(),
+            draft_present: !h.live.draft.committed().is_empty(),
+        })
     })
 }

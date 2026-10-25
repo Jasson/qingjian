@@ -6,12 +6,18 @@ use crate::imk::TextClient;
 
 impl QingjianInputController {
     pub(super) fn commit_highlighted(&self, client: TextClient<'_>) -> bool {
+        if crate::imk::editor::session_owned() {
+            return true;
+        }
         let index = host::with(|h| h.session.highlighted).unwrap_or(0);
         self.commit_index(index, client)
     }
 
     /// 上屏第 `index` 个候选；没有候选时上屏拼音本身。上屏后剩余拼音继续组句。
     pub(super) fn commit_index(&self, index: usize, client: TextClient<'_>) -> bool {
+        if crate::imk::editor::session_owned() {
+            return true;
+        }
         let candidate = host::with(|h| h.session.candidate(index)).flatten();
         let Some(candidate) = candidate else {
             if host::with(|h| index < h.session.layout.len()).unwrap_or(false) {
@@ -30,6 +36,9 @@ impl QingjianInputController {
 
     /// 把拼音原样上屏并清空。缓冲区为空时返回 false。
     pub(super) fn commit_raw(&self, client: TextClient<'_>) -> bool {
+        if crate::imk::editor::session_owned() {
+            return true;
+        }
         let Some(raw) = host::with(|h| h.engine.take_raw()) else {
             return false;
         };

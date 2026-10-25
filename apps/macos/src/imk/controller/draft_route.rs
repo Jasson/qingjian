@@ -6,7 +6,7 @@ pub(super) enum DraftKeyRoute {
 
     HoldDraft,
 
-    PassTerminal,
+    PassApplication,
 }
 
 impl DraftKeyRoute {
@@ -38,12 +38,12 @@ impl DraftKeyRoute {
         match (terminal_command, has_pending_text) {
             (false, _) => Self::StageInput,
             (true, true) => Self::HoldDraft,
-            (true, false) => Self::PassTerminal,
+            (true, false) => Self::PassApplication,
         }
     }
 
     pub fn consume_fallback(self, staged: bool, key_down: bool, handled: bool) -> bool {
-        handled || (staged && key_down && self != Self::PassTerminal)
+        handled || (staged && key_down && self != Self::PassApplication)
     }
 }
 
@@ -64,7 +64,7 @@ mod tests {
             assert_eq!(active, DraftKeyRoute::HoldDraft);
             assert!(active.consume_fallback(true, true, false));
             let empty = DraftKeyRoute::for_key(key, control, false);
-            assert_eq!(empty, DraftKeyRoute::PassTerminal);
+            assert_eq!(empty, DraftKeyRoute::PassApplication);
             assert!(!empty.consume_fallback(true, true, false));
         }
     }
@@ -84,7 +84,7 @@ mod tests {
     }
 
     #[test]
-    fn only_a_plain_single_space_in_an_unoccupied_truly_empty_terminal_draft_can_pass() {
+    fn only_a_plain_single_space_in_an_unoccupied_truly_empty_translation_draft_can_pass() {
         assert!(DraftKeyRoute::passes_empty_space(
             49,
             Some(" "),
@@ -164,7 +164,7 @@ mod tests {
         assert!(initial.consume_fallback(true, true, false));
         let current =
             if DraftKeyRoute::passes_empty_space(49, Some(" "), true, true, "", false, false) {
-                DraftKeyRoute::PassTerminal
+                DraftKeyRoute::PassApplication
             } else {
                 initial
             };

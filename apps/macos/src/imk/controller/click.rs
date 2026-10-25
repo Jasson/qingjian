@@ -41,6 +41,9 @@ pub(crate) fn dispatch_system_translation_hotkey(
     observation: &host::ObservationToken,
 ) -> bool {
     use crate::imk::{hotkey, secure_input};
+    if crate::imk::editor::session_owned() {
+        return true;
+    }
     let Some(controller) = ACTIVE.with(|active| active.borrow().clone()) else {
         return true;
     };
@@ -48,13 +51,13 @@ pub(crate) fn dispatch_system_translation_hotkey(
         tracing::info!(target: "live_translation", generation, reason = "controller_or_registration_changed", "系统译文热键未输出");
         return true;
     }
-    if secure_input::enabled() || !hotkey::terminal_is_frontmost() {
+    if secure_input::enabled() || !crate::imk::frontmost::matches(observation.application()) {
         hotkey::disable();
         tracing::info!(target: "live_translation", generation, reason = "secure_or_not_frontmost", "系统译文热键未输出");
         return true;
     }
     let valid = host::with(|h| {
-        h.terminal_draft_active()
+        h.draft_active()
             && h.settings.config().shortcut.insert_live_translation == Some(combo)
             && observation.matches(&h.live_observation_token())
     });
@@ -69,16 +72,19 @@ pub(crate) fn dispatch_system_translation_hotkey(
     let Some(client) = client else {
         return true;
     };
-    if !controller.is_current_controller() || !hotkey::current(generation) {
+    if crate::imk::editor::session_owned()
+        || !controller.is_current_controller()
+        || !hotkey::current(generation)
+    {
         return true;
     }
-    if secure_input::enabled() || !hotkey::terminal_is_frontmost() {
+    if secure_input::enabled() || !crate::imk::frontmost::matches(observation.application()) {
         hotkey::disable();
         tracing::info!(target: "live_translation", generation, reason = "secure_or_not_frontmost", "系统译文热键未输出");
         return true;
     }
     let valid = host::with(|h| {
-        h.terminal_draft_active()
+        h.draft_active()
             && h.settings.config().shortcut.insert_live_translation == Some(combo)
             && observation.matches(&h.live_observation_token())
     });
@@ -95,6 +101,9 @@ pub(crate) fn dispatch_system_translation_hotkey(
 
 /// 候选窗口的点击回调（host 建窗口时注册）。
 pub fn click(target: HitTarget) {
+    if crate::imk::editor::session_owned() {
+        return;
+    }
     let Some(controller) = ACTIVE.with(|active| active.borrow().clone()) else {
         tracing::debug!("没有激活的会话，点击不处理");
         return;
@@ -106,6 +115,9 @@ pub fn click(target: HitTarget) {
 
 /// 符号面板的点击回调（host 建窗口时注册）。
 pub fn panel_mouse(hit: PanelMouse) {
+    if crate::imk::editor::session_owned() {
+        return;
+    }
     let Some(controller) = ACTIVE.with(|active| active.borrow().clone()) else {
         return;
     };
@@ -114,6 +126,9 @@ pub fn panel_mouse(hit: PanelMouse) {
     let Some(client) = client else {
         return;
     };
+    if crate::imk::editor::session_owned() {
+        return;
+    }
     if catch_panic("panel_click", || {
         controller.panel_mouse_event(hit, TextClient::new(&client))
     })
@@ -125,6 +140,9 @@ pub fn panel_mouse(hit: PanelMouse) {
 
 /// 译文就绪后刷新一次动作能力，覆盖英文直输与标点随后才由应用插入的路径。
 pub fn refresh_live_actions() {
+    if crate::imk::editor::session_owned() {
+        return;
+    }
     let Some(controller) = ACTIVE.with(|active| active.borrow().clone()) else {
         return;
     };
@@ -133,7 +151,10 @@ pub fn refresh_live_actions() {
     let Some(client) = client else {
         return;
     };
-    if !controller.is_current_controller() || host::with(|h| h.live.epoch) != epoch {
+    if crate::imk::editor::session_owned()
+        || !controller.is_current_controller()
+        || host::with(|h| h.live.epoch) != epoch
+    {
         return;
     }
     if catch_panic("live_actions", || {
@@ -176,20 +197,35 @@ impl QingjianInputController {
     }
 
     fn click(&self, target: HitTarget) {
-        let live_epoch = matches!(target, HitTarget::Action(_))
-            .then(|| host::with(|h| h.live.epoch))
+        if crate::imk::editor::session_owned() {
+            return;
+        }
+        let observation = matches!(target, HitTarget::Action(_))
+            .then(|| host::with(|h| h.live_observation_token()))
             .flatten();
         // SAFETY: IMKInputController 的 `client` 返回当前会话的文本客户端（实现 IMKTextInput 的代理），可能为 nil
         let client: Option<Retained<AnyObject>> = unsafe { msg_send![self, client] };
         let Some(client) = client else {
             return;
         };
+        if crate::imk::editor::session_owned() {
+            return;
+        }
         let client = TextClient::new(&client);
         if let HitTarget::Action(action) = target {
-            if live_epoch != host::with(|h| h.live.epoch) || !self.is_current_controller() {
+            let Some(observation) = observation else {
+                return;
+            };
+            if host::with(|h| observation.matches(&h.live_observation_token())) != Some(true)
+                || !self.is_current_controller()
+            {
                 return;
             }
-            self.perform_live_action(action, Some(client));
+            self.perform_live_action_checked(
+                action,
+                Some(client),
+                Some(super::output_guard::OutputGuard::Snapshot(&observation)),
+            );
             return;
         }
         let composing = host::with(|h| !h.engine.composition().is_empty()).unwrap_or(false);

@@ -27,16 +27,15 @@ impl QingjianInputController {
             }
             let epoch = observation.epoch();
             h.anchor = anchor;
-            if h.engine.application().is_some_and(|previous| snapshot.application.as_deref().is_some_and(|current| previous != current)) {
-                h.reset_live_translation("application_changed");
-                h.engine.set_application(snapshot.application.clone());
-                return true;
+            if h.engine.application() != snapshot.application.as_deref() {
+                h.accept_live_application(snapshot.application.as_deref());
+                return false;
             }
             if h.live.paused {
                 h.live.last_context = Some(snapshot);
                 return true;
             }
-            if h.terminal_draft_active() {
+            if h.draft_active() {
                 h.live.last_context = Some(snapshot);
                 return true;
             }
@@ -259,23 +258,6 @@ impl QingjianInputController {
             self.render(client);
         }
         handled.is_some()
-    }
-
-    /// 每个键都问一次应用标识（activateServer 时进程刚拉起可能还拿不到），变了才告诉 Engine。
-    pub(super) fn note_application(&self, client: &TextClient<'_>) {
-        let app = client.bundle_identifier();
-        host::with(|h| {
-            let changed = h
-                .engine
-                .application()
-                .is_some_and(|previous| app.as_deref().is_some_and(|current| previous != current));
-            if changed {
-                h.reset_live_translation("application_changed");
-            }
-            if app.is_some() && h.engine.application() != app.as_deref() {
-                h.engine.set_application(app);
-            }
-        });
     }
 
     /// 翻页，高亮落到新页第一项。已在首页 / 末页时不动。

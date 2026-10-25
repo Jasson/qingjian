@@ -2,11 +2,13 @@
 
 mod actions;
 mod application;
+mod archive;
 mod display;
 mod draft;
 mod editing;
 mod monitor;
 mod observation;
+mod raw_policy;
 mod receipt;
 mod session;
 mod ticker;
@@ -21,9 +23,13 @@ use crate::host::Host;
 
 impl Host {
     pub fn reset_live_translation(&mut self, reason: &'static str) {
-        if !self.live.draft.source().is_empty()
-            || (self.live.draft_configured()
-                && self.engine.application() == Some("com.apple.Terminal"))
+        if reason == "secure_input" || reason == "login_window" {
+            self.live.archive.clear();
+        }
+        if reason == "secure_input"
+            || reason == "login_window"
+            || !self.live.draft.source().is_empty()
+            || self.live.draft_configured_in(self.engine.application())
         {
             self.engine.clear();
             self.reset_session(None, Vec::new());
@@ -33,8 +39,9 @@ impl Host {
     }
 
     pub fn pause_live_translation(&mut self, reason: &'static str) {
-        if self.terminal_draft_active() {
-            self.reset_live_translation(reason);
+        if self.draft_active() {
+            self.suspend_draft(reason);
+            self.refresh_live_actions();
             return;
         }
         self.live.pause(reason);
@@ -47,7 +54,7 @@ impl Host {
             return;
         }
         self.live.resume();
-        if self.terminal_draft_active() {
+        if self.draft_active() {
             if !self.live.draft.commit(text) {
                 self.live_action_notice("草稿不接受控制字符，请输入单行文字");
                 return;
@@ -59,8 +66,8 @@ impl Host {
     }
 
     pub fn backspace_live_text(&mut self) {
-        if self.terminal_draft_active() {
-            self.backspace_terminal_draft();
+        if self.draft_active() {
+            self.backspace_draft();
         } else if self.live.active() && !self.live.paused {
             self.live.tracker.backspace();
             self.submit_live_translation();
@@ -85,7 +92,7 @@ impl Host {
                 .map(|candidate| candidate.text)
                 .unwrap_or_else(|| self.engine.composition().text().to_owned())
         };
-        if self.terminal_draft_active() {
+        if self.draft_active() {
             self.live.draft.preview(&preview);
         } else {
             self.live.tracker.preview(&preview);
@@ -94,7 +101,7 @@ impl Host {
     }
 
     fn submit_live_translation(&mut self) {
-        let source = if self.terminal_draft_active() {
+        let source = if self.draft_active() {
             self.live.draft.source()
         } else {
             self.live.tracker.source()
@@ -158,19 +165,42 @@ impl Host {
     }
 
     fn render_live_translation(&mut self) {
-        let empty = self.live.source.trim().is_empty();
-        let draft = self.terminal_draft_active();
+        if crate::imk::editor::session_owned() {
+            self.window.hide();
+            self.live.window.hide();
+            return;
+        }
+        let draft = self.draft_active();
+        let empty = if draft {
+            self.live.source.is_empty()
+        } else {
+            self.live.source.trim().is_empty()
+        };
+        let restorable = self.can_restore_draft();
         let shortcut_conflict = draft && self.settings.config().shortcut.draft_shortcuts_conflict();
         let registration_error = draft
             && (self.live.system_hotkey_notice.is_some()
                 || self.live.backspace_tap_notice.is_some()
                 || shortcut_conflict);
-        if (empty && !registration_error) || !self.live.active() {
+        let can_open_editor = self.live.active() && self.engine.application().is_some();
+        let visible = can_open_editor
+            || !empty
+            || registration_error
+            || restorable
+            || (draft && self.live.action_notice.is_some());
+        if !visible || !self.live.active() {
             self.live.window.hide();
             return;
         }
         let (text, status) = if empty {
-            ("请先输入原文草稿", "Terminal 草稿模式")
+            (
+                if restorable {
+                    "当前应用有草稿可恢复"
+                } else {
+                    "请先输入原文草稿"
+                },
+                "翻译草稿模式",
+            )
         } else {
             self.live.display.presentation()
         };
@@ -200,15 +230,15 @@ impl Host {
         let status = self
             .live_replace_hint()
             .map_or_else(|| status.to_owned(), |hint| format!("{status} · {hint}"));
-        let actions = if draft {
+        let mut actions = if draft {
             vec![
                 qingjian_render::Action {
                     target: qingjian_render::ActionTarget::InsertTranslation,
-                    enabled: self.terminal_draft_output(false).is_some(),
+                    enabled: self.draft_output(false).is_some(),
                 },
                 qingjian_render::Action {
                     target: qingjian_render::ActionTarget::InsertOriginal,
-                    enabled: self.terminal_draft_output(true).is_some(),
+                    enabled: self.draft_output(true).is_some(),
                 },
                 qingjian_render::Action {
                     target: qingjian_render::ActionTarget::CopyTranslation,
@@ -231,6 +261,19 @@ impl Host {
                 },
             ]
         };
+        if can_open_editor {
+            actions.push(qingjian_render::Action {
+                target: qingjian_render::ActionTarget::OpenTranslationDraft,
+                enabled: true,
+            });
+        }
+        if restorable {
+            actions.push(qingjian_render::Action {
+                target: qingjian_render::ActionTarget::RestoreDraft,
+                enabled: self.engine.composition().is_empty()
+                    && self.live.draft.source().is_empty(),
+            });
+        }
         let lines = if draft {
             let mut lines = qingjian_render::translation_lines(
                 &format!("原文草稿：{}", self.live.draft.source()),

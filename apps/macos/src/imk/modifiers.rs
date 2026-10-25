@@ -84,3 +84,11 @@ pub fn needs_finish() -> bool {
 pub fn did_finish() {
     MODE.with(|mode| mode.borrow_mut().did_finish());
 }
+
+/// 独立编辑窗继承当前逻辑模式，但不共享后续单击/修饰键状态。
+pub(super) fn editor_mode() -> ModeSwitch {
+    let mut mode = MODE.with(|mode| mode.borrow().clone());
+    mode.cancel_with_flags(NSEvent::modifierFlags_class().bits());
+    mode.did_finish();
+    mode
+}

@@ -19,7 +19,7 @@ use crate::view::parts::controls::{choice, toggle_info};
 /// 组句中固定、不能改的键。
 const FIXED: &str = if cfg!(target_os = "macos") {
     "组句中固定的键：空格上屏首选，1–9 选词，回车原样上屏，Esc 清空；⌥⌫ 删一个音节，⌘⌫ 删到开头；\
-     ⌥← / ⌥→ 按音节跳，⌘← / ⌘→ 到开头 / 末尾；↑ / ↓ 移动高亮，PageUp / PageDown 与 ⇧Tab 翻页；Tab 采用整句补全。终端草稿模式按上方设置执行。"
+     ⌥← / ⌥→ 按音节跳，⌘← / ⌘→ 到开头 / 末尾；↑ / ↓ 移动高亮，PageUp / PageDown 与 ⇧Tab 翻页；Tab 采用整句补全。翻译草稿模式按上方设置执行。"
 } else {
     "组句中固定的键：空格上屏首选，1–9 选词，回车原样上屏，Esc 清空；← / → 移动拼音光标，Home / End 到开头 / 末尾；\
      ↑ / ↓ 移动高亮，PageUp / PageDown 与 Shift + Tab 翻页；Tab 采用整句补全。"
@@ -133,16 +133,25 @@ pub fn shortcuts(ui: &mut Ui<Message>, page: &Page) -> Result<Vec<NodeId>, Rende
                 false,
             )?,
         ];
-        if Feature::TerminalDraft.here() {
+        if Feature::FocusedDraftEditor.here() {
+            rows.push(recorder(
+                ui,
+                page,
+                Shortcut::OpenTranslationDraft,
+                "微信中先打开独立草稿窗再输入；需开启实时翻译，录制时按 Backspace 禁用快捷键",
+                false,
+            )?);
+        }
+        if Feature::TranslationDraft.here() {
             rows.insert(1, recorder(
                 ui,
                 page,
                 Shortcut::InsertLiveTranslation,
-                "仅系统 Terminal 草稿模式：输出最新整段译文，不自动执行；录制时按 Backspace 禁用快捷键",
+                "翻译草稿模式：输出最新整段译文，不自动发送消息或执行；录制时按 Backspace 禁用快捷键",
                 false,
             )?);
         }
-        if Feature::TerminalDraft.here() {
+        if Feature::TranslationDraft.here() {
             rows.push(recorder(
                 ui,
                 page,
@@ -298,7 +307,10 @@ pub fn recorder(
     let current = shortcut.current(&page.settings.config);
     let control = KeyRecorder::new(&current)
         .width(
-            if matches!(shortcut, Shortcut::InsertOriginal | Shortcut::CancelDraft) {
+            if matches!(
+                shortcut,
+                Shortcut::OpenTranslationDraft | Shortcut::InsertOriginal | Shortcut::CancelDraft
+            ) {
                 240.0
             } else {
                 150.0

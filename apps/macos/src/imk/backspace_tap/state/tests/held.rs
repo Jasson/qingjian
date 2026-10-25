@@ -3,7 +3,7 @@
 use super::{active, down, event};
 
 #[test]
-fn held_repeat_after_empty_never_deletes_terminal_text_but_next_empty_press_passes() {
+fn held_repeat_after_empty_never_deletes_application_text_but_next_empty_press_passes() {
     let mut state = active();
     assert!(down(&mut state));
     let batch = state.batch().unwrap();

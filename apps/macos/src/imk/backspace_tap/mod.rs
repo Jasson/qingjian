@@ -1,10 +1,11 @@
-//! Terminal 内部草稿的普通退格接管；active ForPid tap 仅排队，不写应用文本。
+//! 当前应用内部草稿的普通退格接管；active ForPid tap 仅排队，不写应用文本。
 
 mod action;
 mod batch;
 mod bindings;
 mod entry;
 mod event;
+mod foreground;
 mod held;
 mod key_binding;
 mod native;
@@ -16,7 +17,6 @@ use std::cell::{Cell, RefCell};
 
 use objc2::rc::Retained;
 use objc2::{MainThreadMarker, sel};
-use objc2_app_kit::NSWorkspace;
 use objc2_foundation::NSTimer;
 
 use crate::host::{self, ObservationToken};
@@ -170,24 +170,43 @@ fn stop_idle_timer() {
 }
 
 pub(crate) fn frontmost_pid() -> Option<i32> {
-    let app = NSWorkspace::sharedWorkspace().frontmostApplication()?;
-    (app.bundleIdentifier()?.to_string() == "com.apple.Terminal").then(|| app.processIdentifier())
+    let foreground = crate::imk::frontmost::identity();
+    let secure = secure_input::enabled();
+    STATE.with(|state| {
+        let state = state.borrow();
+        foreground::matching_pid(
+            state.configured,
+            state.token.as_ref().and_then(ObservationToken::application),
+            foreground
+                .as_ref()
+                .map(|(application, pid)| (application.as_str(), *pid)),
+            secure,
+        )
+    })
 }
 
 fn sync() {
+    if crate::imk::editor::session_owned() {
+        disable();
+        return;
+    }
     let owner = controller::active_controller_id();
+    host::with(|_| ());
     let pid = if secure_input::enabled() {
         None
     } else {
         frontmost_pid()
     };
+    if controller::active_controller_id() != owner {
+        disable();
+        return;
+    }
     STATE.with(|state| state.borrow_mut().bind(owner, pid));
     if owner.is_none() || pid.is_none() {
         disable();
         return;
     }
     // Host 每次释放借用都会发布镜像；轮询负责创建或释放 native 资源。
-    host::with(|_| ());
     let desired = STATE.with(|state| {
         let state = state.borrow();
         state.needs_tap().then_some(state.generation)
@@ -274,6 +293,7 @@ pub(crate) fn queue_imk_action(key: i64, flags: u64, repeat: bool, timestamp: f6
     let ticket = STATE.with(|state| state.borrow().imk_ticket())?;
     // 首输入后可能尚未轮到 timer；先建立可隔离重复按键的 native 入口再排动作。
     sync();
+    let secure = secure_input::enabled();
     STATE.with(|state| {
         let mut state = state.borrow_mut();
         if !state.input_matches(ticket.0, ticket.1, &ticket.2) {
@@ -287,7 +307,7 @@ pub(crate) fn queue_imk_action(key: i64, flags: u64, repeat: bool, timestamp: f6
             pid: state.pid.map_or(0, i64::from),
             timestamp: (timestamp * 1_000_000_000.0) as u64,
             repeat,
-            secure: secure_input::enabled(),
+            secure,
         };
         state.receive(event);
     });

@@ -1,7 +1,9 @@
 //! 「中英文」页：英文模式（开关、切换键、默认英文与按应用记住、英文候选、Shift + 字母），标点与中西文空格，本地实时翻译，悬浮状态条。
 
 use bamboo_slip::taffy::{FlexDirection, NodeId, Style};
-use bamboo_slip::{Button, Checkbox, RenderError, SettingRow, Ui, Visual, group, section_title};
+use bamboo_slip::{
+    Button, Checkbox, RenderError, SettingRow, TextField, Ui, Visual, group, section_title,
+};
 use qingjian_platform::{DEFAULT_ENGLISH_CANDIDATES_ON, ShiftLetter, SwitchKey};
 
 use crate::message::{FieldId, Message};
@@ -173,7 +175,7 @@ pub fn language(ui: &mut Ui<Message>, page: &Page) -> Result<Vec<NodeId>, Render
                 page,
                 "允许用译文替换选中内容",
                 Some(
-                    "先取得整句译文，再选中与原文完全一致的文字，点击按钮或按快捷键确认；不重新翻译；系统 Terminal 使用另行开启的草稿模式",
+                    "先取得整句译文，再选中与原文完全一致的文字手动替换；不重新翻译，系统 Terminal 不支持此选区替换",
                 ),
                 ("live_translation", "allow_replace"),
                 live.allow_replace,
@@ -204,18 +206,21 @@ pub fn language(ui: &mut Ui<Message>, page: &Page) -> Result<Vec<NodeId>, Render
                 "maternion/hy-mt2:1.8b",
             )?,
         ];
-        if Feature::TerminalDraft.here() {
+        if Feature::TranslationDraft.here() {
             rows.insert(1, toggle_info(
                 ui,
                 page,
-                "终端译文上屏（草稿模式）",
+                "翻译草稿模式",
                 Some(
-                    "仅系统 Terminal：原文先留在输入法草稿中，确认后输出译文或原文；不会自动执行；默认回车输出已确认原文加未选按键，Esc一次取消整稿，可改快捷键",
+                    "默认开启，仅在实时翻译启用时生效；原文先留在青简，确认后输出；默认回车输出原文但不发送消息，Esc取消整稿，单行输入",
                 ),
-                ("live_translation", "terminal_draft"),
-                live.terminal_draft,
+                ("live_translation", "draft_enabled"),
+                live.draft_enabled,
                 !live.enabled,
             )?);
+        }
+        if Feature::TranslationDraft.here() {
+            rows.insert(2, draft_excluded_apps(ui, page)?);
         }
         out.push(section_title(ui, theme, "本地实时翻译")?);
         out.push(group(ui, theme, &rows)?);
@@ -289,4 +294,33 @@ fn switch_keys(ui: &mut Ui<Message>, page: &Page) -> Result<NodeId, RenderError>
             .control(column),
         "switch-keys",
     )
+}
+
+/// 应用标识按行编辑，保存为真正的数组；清空后恢复所有可识别应用。
+fn draft_excluded_apps(ui: &mut Ui<Message>, page: &Page) -> Result<NodeId, RenderError> {
+    let id = FieldId::LiveDraftExcludedApps;
+    let Some(edit) = page.settings.fields.get(&id) else {
+        return SettingRow::new("不使用草稿的应用").build(ui, &page.theme);
+    };
+    let input = TextField::new(edit)
+        .rows(3)
+        .width(300.0)
+        .placeholder("每行一个应用标识，如 com.apple.Terminal")
+        .build(
+            ui,
+            &page.theme,
+            ("field", id),
+            move |edit| Message::Edit(id, edit),
+            Some(Message::Commit(id)),
+            Some(Message::Cancel(id)),
+        )?;
+    let save = Button::new("保存排除列表").build(
+        ui,
+        &page.theme,
+        "save-draft-excluded-apps",
+        Message::Commit(id),
+    )?;
+    with_notice(ui, page, SettingRow::new("不使用草稿的应用")
+        .info("每行一个完整 bundle identifier，区分大小写，不支持通配符；这些应用沿用直接输入，需要多行时可排除该应用；留空表示不排除")
+        .control(input).below(save), "draft-apps")
 }

@@ -4,11 +4,12 @@ use objc2::MainThreadMarker;
 use qingjian_platform::{CandidateRenderer, LayoutMode};
 use qingjian_predict::live::context::{ContextGuard, ContextSnapshot};
 use qingjian_predict::live::{
-    LiveTranslationConfig, LiveTranslator, SentenceTracker, TerminalDraft,
+    DraftArchive, LiveTranslationConfig, LiveTranslator, SentenceTracker, TerminalDraft,
 };
 
 use super::display::DisplayState;
 use super::monitor::LiveMonitor;
+use super::raw_policy::RawPolicy;
 use crate::candidates::CandidateWindow;
 
 pub struct LiveSession {
@@ -17,6 +18,10 @@ pub struct LiveSession {
     pub tracker: SentenceTracker,
 
     pub draft: TerminalDraft,
+
+    pub archive: DraftArchive,
+
+    pub raw_generation: u64,
 
     pub context: ContextGuard,
 
@@ -45,6 +50,8 @@ pub struct LiveSession {
     pub epoch: u64,
 
     applied: Option<LiveTranslationConfig>,
+
+    raw_policy: Option<RawPolicy>,
 }
 
 impl LiveSession {
@@ -57,6 +64,8 @@ impl LiveSession {
             window,
             tracker: SentenceTracker::default(),
             draft: TerminalDraft::default(),
+            archive: DraftArchive::default(),
+            raw_generation: 0,
             context: ContextGuard::default(),
             translator: None,
             monitor: LiveMonitor::new(mtm),
@@ -71,6 +80,7 @@ impl LiveSession {
             unavailable: None,
             epoch: 0,
             applied: None,
+            raw_policy: None,
         }
     }
 
@@ -79,10 +89,25 @@ impl LiveSession {
             && !crate::imk::secure_input::enabled()
     }
 
-    pub fn draft_configured(&self) -> bool {
+    pub fn draft_configured_in(&self, application: Option<&str>) -> bool {
         self.applied
             .as_ref()
-            .is_some_and(|config| config.enabled && config.terminal_draft)
+            .is_some_and(|config| crate::imk::draft_policy::allowed(config, application, false))
+    }
+
+    pub fn configuration_changed(&self, config: &LiveTranslationConfig, force: bool) -> bool {
+        force || self.applied.as_ref() != Some(config)
+    }
+
+    pub fn update_raw_policy(&mut self, config: &qingjian_platform::GeneralConfig) -> bool {
+        let policy = RawPolicy::for_config(config);
+        let changed = self.raw_policy.is_some_and(|previous| previous != policy);
+        self.raw_policy = Some(policy);
+        if changed {
+            self.raw_generation = self.raw_generation.wrapping_add(1);
+            self.archive.clear();
+        }
+        changed
     }
 
     pub fn configure(&mut self, config: &LiveTranslationConfig, force: bool) -> bool {
@@ -90,6 +115,9 @@ impl LiveSession {
             return false;
         }
         self.reset("configuration_changed");
+        if !config.enabled {
+            self.archive.clear();
+        }
         self.unavailable = None;
         self.translator = if config.enabled {
             match LiveTranslator::new(config.clone()) {

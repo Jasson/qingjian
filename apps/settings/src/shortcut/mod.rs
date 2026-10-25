@@ -13,6 +13,7 @@ pub enum Shortcut {
     CopyLiveTranslation,
     ReplaceLiveTranslation,
     InsertLiveTranslation,
+    OpenTranslationDraft,
     InsertOriginal,
     CancelDraft,
     /// 辅码触发键（单个符号，不带修饰键）。
@@ -21,7 +22,7 @@ pub enum Shortcut {
 
 impl Shortcut {
     #[cfg(test)]
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 12] = [
         Self::Translation,
         Self::TranslationSecond,
         Self::DeleteCandidate,
@@ -30,6 +31,7 @@ impl Shortcut {
         Self::CopyLiveTranslation,
         Self::ReplaceLiveTranslation,
         Self::InsertLiveTranslation,
+        Self::OpenTranslationDraft,
         Self::InsertOriginal,
         Self::CancelDraft,
         Self::AuxCodeKey,
@@ -44,9 +46,10 @@ impl Shortcut {
             Self::Predict => "按需 AI 联想",
             Self::CopyLiveTranslation => "复制实时译文",
             Self::ReplaceLiveTranslation => "用实时译文替换选中内容",
-            Self::InsertLiveTranslation => "输出终端草稿译文",
-            Self::InsertOriginal => "输出终端草稿原文",
-            Self::CancelDraft => "取消终端整段草稿",
+            Self::InsertLiveTranslation => "输出草稿译文",
+            Self::OpenTranslationDraft => "打开翻译草稿窗",
+            Self::InsertOriginal => "输出草稿原文",
+            Self::CancelDraft => "取消整段草稿",
             Self::AuxCodeKey => "触发键",
         }
     }
@@ -62,6 +65,7 @@ impl Shortcut {
             Self::CopyLiveTranslation => ("shortcut", "copy_live_translation"),
             Self::ReplaceLiveTranslation => ("shortcut", "replace_live_translation"),
             Self::InsertLiveTranslation => ("shortcut", "insert_live_translation"),
+            Self::OpenTranslationDraft => ("shortcut", "open_translation_draft"),
             Self::InsertOriginal => ("shortcut", "insert_original"),
             Self::CancelDraft => ("shortcut", "cancel_draft"),
             Self::AuxCodeKey => ("general", "aux_code_key"),
@@ -77,6 +81,7 @@ impl Shortcut {
             Self::TranslateSelection | Self::Predict => "按下修饰键 + 字母",
             Self::CopyLiveTranslation
             | Self::ReplaceLiveTranslation
+            | Self::OpenTranslationDraft
             | Self::InsertLiveTranslation => "按修饰键 + 字母，退格禁用",
             Self::InsertOriginal | Self::CancelDraft => "Enter / Esc / 修饰字母；⌫禁用",
             Self::AuxCodeKey => "按一个符号键",
@@ -105,6 +110,10 @@ impl Shortcut {
                 .insert_live_translation
                 .map(combo_label)
                 .unwrap_or_else(|| "未启用".to_owned()),
+            Self::OpenTranslationDraft => shortcut
+                .open_translation_draft
+                .map(combo_label)
+                .unwrap_or_else(|| "未启用".to_owned()),
             Self::InsertOriginal => draft_label(shortcut.insert_original),
             Self::CancelDraft => draft_label(shortcut.cancel_draft),
             Self::AuxCodeKey => config.general.aux_code_key().to_string(),
@@ -118,6 +127,7 @@ impl Shortcut {
             self,
             Self::CopyLiveTranslation
                 | Self::ReplaceLiveTranslation
+                | Self::OpenTranslationDraft
                 | Self::InsertLiveTranslation
                 | Self::InsertOriginal
                 | Self::CancelDraft
@@ -162,6 +172,7 @@ impl Shortcut {
             | Self::Predict
             | Self::CopyLiveTranslation
             | Self::ReplaceLiveTranslation
+            | Self::OpenTranslationDraft
             | Self::InsertLiveTranslation => {
                 let key = match &press.key {
                     KeyCode::Character(text) => single(text).filter(|key| {
@@ -169,6 +180,7 @@ impl Shortcut {
                             self,
                             Self::CopyLiveTranslation
                                 | Self::ReplaceLiveTranslation
+                                | Self::OpenTranslationDraft
                                 | Self::InsertLiveTranslation
                         ) {
                             key.is_ascii_alphabetic()
@@ -183,6 +195,7 @@ impl Shortcut {
                         self,
                         Self::CopyLiveTranslation
                             | Self::ReplaceLiveTranslation
+                            | Self::OpenTranslationDraft
                             | Self::InsertLiveTranslation
                     ) {
                         "要修饰键加一个字母"
@@ -248,7 +261,8 @@ fn action_value(action: Shortcut, value: DraftShortcut, config: &Config) -> Resu
     let enhanced = |shortcut: Shortcut| {
         matches!(
             shortcut,
-            Shortcut::CopyLiveTranslation
+            Shortcut::OpenTranslationDraft
+                | Shortcut::CopyLiveTranslation
                 | Shortcut::ReplaceLiveTranslation
                 | Shortcut::InsertLiveTranslation
                 | Shortcut::InsertOriginal

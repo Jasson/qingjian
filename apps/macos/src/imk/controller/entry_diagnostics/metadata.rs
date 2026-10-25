@@ -23,7 +23,7 @@ impl Metadata {
         let config = host.settings.config();
         Self {
             live_enabled: config.live_translation.enabled,
-            draft_enabled: config.live_translation.terminal_draft,
+            draft_enabled: config.live_translation.draft_enabled,
             application_known: host.engine.application().is_some(),
             terminal_application: host.engine.application() == Some("com.apple.Terminal"),
             pinyin_chars: host.engine.composition().text().chars().count(),

@@ -3557,6 +3557,7 @@ dependencies = [
  "async-openai",
  "jiff",
  "qingjian-core",
+ "qingjian-dictionary",
  "reqwest",
  "serde",
  "serde_json",

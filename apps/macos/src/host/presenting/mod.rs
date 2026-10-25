@@ -95,6 +95,11 @@ impl Host {
 
     /// 按会话状态画候选窗口。候选为空且没有 preedit 时收窗。
     pub fn render(&mut self) {
+        if crate::imk::editor::session_owned() {
+            self.window.hide();
+            self.live.window.hide();
+            return;
+        }
         if self.engine.symbol_panel().is_some() {
             self.render_panel();
             return;
@@ -139,7 +144,7 @@ impl Host {
             .note_displayed(cells.iter().copied().filter_map(Cell::candidate));
         let preedit = preedit::candidate_preedit(
             self.preedit_mode,
-            self.terminal_draft_active(),
+            self.draft_active(),
             self.session.preedit.as_ref(),
         );
         if rows.is_empty() && self.session.preedit.is_none() {

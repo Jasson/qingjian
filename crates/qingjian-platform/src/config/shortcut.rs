@@ -1,3 +1,5 @@
+//! 快捷键配置、默认组合与动作冲突核验。
+
 use qingjian_core::ModeKeys;
 use serde::{Deserialize, Serialize};
 
@@ -51,18 +53,25 @@ pub struct ShortcutConfig {
     )]
     pub replace_live_translation: Option<KeyCombo>,
 
-    /// macOS Terminal 草稿模式：手动输出最新整段译文，空串禁用。
+    /// macOS 草稿模式：手动输出最新整段译文，空串禁用。
     #[serde(
         deserialize_with = "super::optional_key_combo::deserialize_letter",
         serialize_with = "super::optional_key_combo::serialize"
     )]
     pub insert_live_translation: Option<KeyCombo>,
 
-    /// Terminal 草稿：输出已确认文字加未选原始按键，空串禁用。
+    /// macOS：打开可聚焦翻译草稿窗，空串禁用。
+    #[serde(
+        deserialize_with = "super::optional_key_combo::deserialize_letter",
+        serialize_with = "super::optional_key_combo::serialize"
+    )]
+    pub open_translation_draft: Option<KeyCombo>,
+
+    /// 草稿：输出已确认文字加未选原始按键，空串禁用。
     #[serde(with = "super::draft_shortcut")]
     pub insert_original: Option<DraftShortcut>,
 
-    /// Terminal 草稿：一次取消整段草稿与拼音，空串禁用。
+    /// 草稿：一次取消整段草稿与拼音，空串禁用。
     #[serde(with = "super::draft_shortcut")]
     pub cancel_draft: Option<DraftShortcut>,
 
@@ -112,6 +121,10 @@ impl Default for ShortcutConfig {
                 key: 'v',
                 ..KeyCombo::TRANSLATE_DEFAULT
             }),
+            open_translation_draft: Some(KeyCombo {
+                key: 'e',
+                ..KeyCombo::TRANSLATE_DEFAULT
+            }),
             insert_original: Some(DraftShortcut::Enter),
             cancel_draft: Some(DraftShortcut::Escape),
             predict: KeyCombo::PREDICT_DEFAULT,
@@ -121,6 +134,33 @@ impl Default for ShortcutConfig {
 }
 
 impl ShortcutConfig {
+    /// 新草稿入口与已有动作冲突时只禁用新入口，保留旧快捷键的优先级。
+    pub fn open_translation_draft_conflicts(&self) -> bool {
+        let Some(open) = self.open_translation_draft else {
+            return false;
+        };
+        if !open.key.is_ascii_alphabetic() || open.modifiers.is_empty() {
+            return true;
+        }
+        let same = |other: KeyCombo| {
+            open.modifiers == other.modifiers && open.key.eq_ignore_ascii_case(&other.key)
+        };
+        [
+            Some(self.translate_selection),
+            Some(self.predict),
+            self.copy_live_translation,
+            self.replace_live_translation,
+            self.insert_live_translation,
+        ]
+        .into_iter()
+        .flatten()
+        .any(same)
+            || [self.insert_original, self.cancel_draft]
+                .into_iter()
+                .flatten()
+                .any(|shortcut| matches!(shortcut, DraftShortcut::Combo(combo) if same(combo)))
+    }
+
     /// 手改配置的草稿动作冲突时交由壳禁用，不能抢走另一动作或既有组合。
     pub fn draft_shortcuts_conflict(&self) -> bool {
         if self.insert_original.is_some() && self.insert_original == self.cancel_draft {

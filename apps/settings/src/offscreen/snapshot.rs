@@ -89,6 +89,19 @@ pub fn run(config: Option<&Path>, directory: &Path) -> Result<(), Box<dyn std::e
         shot(&mut runner, "中英文：修改替换快捷键后定位录制器")?;
     }
 
+    if crate::support::Feature::FocusedDraftEditor.here() {
+        click(&mut runner, Key::ROOT.child("nav").child(PageId::Shortcuts))?;
+        click(
+            &mut runner,
+            Key::ROOT.child(("recorder", crate::shortcut::Shortcut::OpenTranslationDraft)),
+        )?;
+        shot(&mut runner, "本地实时翻译：打开翻译草稿窗录制器")?;
+        runner.handle(&Event::Key(KeyPress::new(
+            KeyCode::Escape,
+            Modifiers::default(),
+        )));
+    }
+
     click(&mut runner, Key::ROOT.child("nav").child(PageId::Input))?;
     let area = content(&runner);
     hover(&mut runner, area)?;

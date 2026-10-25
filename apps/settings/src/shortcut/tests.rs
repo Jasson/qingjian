@@ -80,6 +80,7 @@ fn live_actions_can_be_disabled_and_reject_conflicting_keys() {
         Shortcut::CopyLiveTranslation,
         Shortcut::ReplaceLiveTranslation,
         Shortcut::InsertLiveTranslation,
+        Shortcut::OpenTranslationDraft,
     ] {
         assert_eq!(
             shortcut.accept(&KeyPress::new(KeyCode::Backspace, Held::default()), &config),
@@ -159,6 +160,7 @@ fn invalid_live_recording_keeps_saved_shortcut() {
         Shortcut::CopyLiveTranslation,
         Shortcut::ReplaceLiveTranslation,
         Shortcut::InsertLiveTranslation,
+        Shortcut::OpenTranslationDraft,
         Shortcut::InsertOriginal,
         Shortcut::CancelDraft,
     ] {
@@ -247,5 +249,55 @@ fn draft_action_recording_accepts_special_keys_and_rejects_conflicts() {
     assert_eq!(
         Shortcut::InsertOriginal.accept(&press("z", alt()), &config),
         Ok("option+z".to_owned())
+    );
+}
+
+#[test]
+fn focused_editor_open_rejects_old_actions_but_does_not_reserve_their_keys() {
+    let mut config = Config::default();
+    assert_eq!(
+        Shortcut::OpenTranslationDraft.config_key(),
+        ("shortcut", "open_translation_draft")
+    );
+    let held = Held {
+        control: true,
+        alt: true,
+        ..Held::default()
+    };
+    for key in ["c", "r", "v", "t", "j"] {
+        assert!(
+            Shortcut::OpenTranslationDraft
+                .accept(&press(key, held), &config)
+                .is_err()
+        );
+    }
+    assert_eq!(
+        Shortcut::OpenTranslationDraft.accept(&press("E", held), &config),
+        Ok("control+option+e".to_owned())
+    );
+    config.shortcut.insert_live_translation = Some("command+shift+y".parse().unwrap());
+    assert!(
+        Shortcut::OpenTranslationDraft
+            .accept(
+                &press(
+                    "y",
+                    Held {
+                        logo: true,
+                        shift: true,
+                        ..Held::default()
+                    }
+                ),
+                &config
+            )
+            .is_err()
+    );
+    // 旧动作可继续选择开窗键；运行时仅禁用发生冲突的新开窗入口。
+    assert_eq!(
+        Shortcut::InsertLiveTranslation.accept(&press("e", held), &config),
+        Ok("control+option+e".to_owned())
+    );
+    assert_eq!(
+        config.shortcut.insert_live_translation,
+        Some("command+shift+y".parse().unwrap())
     );
 }

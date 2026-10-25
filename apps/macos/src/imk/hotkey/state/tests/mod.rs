@@ -149,27 +149,6 @@ fn abc_mapping_covers_all_letters_and_carbon_modifier_bits() {
 }
 
 #[test]
-fn off_terminal_disabled_or_missing_controller_never_produces_a_registration() {
-    let combo = Some(binding('y', 1).combo);
-    assert!(Binding::for_session(combo, Some(1), Some("com.apple.Terminal"), true, true).is_some());
-    for (owner, application, enabled, draft) in [
-        (None, Some("com.apple.Terminal"), true, true),
-        (Some(1), Some("test.browser"), true, true),
-        (Some(1), None, true, true),
-        (Some(1), Some("com.apple.Terminal"), false, true),
-        (Some(1), Some("com.apple.Terminal"), true, false),
-    ] {
-        let wanted = Binding::for_session(combo, owner, application, enabled, draft);
-        assert!(wanted.is_none());
-        let mut state = State::<u64>::default();
-        state.change(wanted);
-        assert!(state.registration_request().is_none());
-        assert!(!state.needs_monitor());
-    }
-    assert!(Binding::for_session(None, Some(1), Some("com.apple.Terminal"), true, true).is_none());
-}
-
-#[test]
 fn monitor_stops_after_cleanup_and_failed_registration_can_retry_on_reactivation() {
     let mut state = State::<u64>::default();
     assert!(!state.needs_monitor());
@@ -187,3 +166,5 @@ fn monitor_stops_after_cleanup_and_failed_registration_can_retry_on_reactivation
     state.retired(10);
     assert!(!state.needs_monitor());
 }
+
+mod application;

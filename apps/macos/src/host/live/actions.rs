@@ -9,20 +9,18 @@ use crate::host::Host;
 
 impl Host {
     pub fn accept_live_application(&mut self, application: Option<&str>) -> bool {
-        let Some(application) = application else {
-            return true;
-        };
-        if self
-            .engine
-            .application()
-            .is_some_and(|previous| previous != application)
-        {
-            self.reset_live_translation("application_changed");
-            self.engine.set_application(Some(application.to_owned()));
+        let application = application.filter(|app| !app.trim().is_empty());
+        if self.engine.application() != application {
+            if application == Some("com.apple.loginwindow") || crate::imk::secure_input::enabled() {
+                self.live.archive.clear();
+                self.cancel_draft("secure_input");
+            } else {
+                self.suspend_draft("application_changed");
+            }
+            self.engine.clear();
+            self.reset_session(None, Vec::new());
+            self.engine.set_application(application.map(str::to_owned));
             return false;
-        }
-        if self.engine.application().is_none() {
-            self.engine.set_application(Some(application.to_owned()));
         }
         true
     }
@@ -145,8 +143,8 @@ impl Host {
     }
 
     pub(super) fn live_replace_hint(&self) -> Option<&'static str> {
-        if self.terminal_draft_active() {
-            return Some("原文暂存青简 · 确认输出仅填入终端，不执行回车");
+        if self.draft_active() {
+            return Some("原文暂存青简 · 确认输出仅填入应用，不发送回车");
         }
         if !self.settings.config().live_translation.allow_replace {
             Some("替换未开启")

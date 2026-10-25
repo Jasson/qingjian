@@ -9,7 +9,6 @@ use crate::imk::{TextClient, modifiers};
 impl QingjianInputController {
     pub(super) fn handle_text(&self, text: &str, client: TextClient<'_>) -> bool {
         tracing::debug!(%text, "inputText");
-        self.note_application(&client);
         let mut composing = host::with(|h| !h.engine.composition().is_empty()).unwrap_or(false);
         let english = modifiers::english_mode();
         // 不在白名单（`[apps] english_candidates_on`）里的应用，英文模式是纯直通

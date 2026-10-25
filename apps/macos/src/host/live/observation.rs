@@ -6,6 +6,8 @@ use crate::host::Host;
 pub struct ObservationToken {
     epoch: u64,
 
+    application: Option<String>,
+
     source: String,
 
     request_id: Option<u64>,
@@ -28,6 +30,10 @@ impl ObservationToken {
         self.epoch
     }
 
+    pub fn application(&self) -> Option<&str> {
+        self.application.as_deref()
+    }
+
     pub fn matches(&self, current: &Self) -> bool {
         self == current
     }
@@ -37,6 +43,7 @@ impl Host {
     pub fn live_observation_token(&self) -> ObservationToken {
         ObservationToken {
             epoch: self.live.epoch,
+            application: self.engine.application().map(str::to_owned),
             source: self.live.source.clone(),
             request_id: self.live.request_id,
             composition: self.engine.composition().text().to_owned(),
@@ -56,6 +63,7 @@ mod tests {
     fn token() -> ObservationToken {
         ObservationToken {
             epoch: 1,
+            application: Some("app.a".to_owned()),
             source: "你说的都对".to_owned(),
             request_id: Some(2),
             composition: "ni".to_owned(),
@@ -94,7 +102,7 @@ mod tests {
     fn request_source_cursor_and_focus_each_invalidate_the_observation() {
         let before = token();
         assert!(before.matches(&before.clone()));
-        for change in 0..7 {
+        for change in 0..8 {
             let mut current = before.clone();
             match change {
                 0 => current.request_id = Some(3),
@@ -103,7 +111,8 @@ mod tests {
                 3 => current.epoch = 2,
                 4 => current.paused = true,
                 5 => current.draft_revision += 1,
-                _ => current.raw_composition = "Ni".to_owned(),
+                6 => current.raw_composition = "Ni".to_owned(),
+                _ => current.application = Some("app.b".to_owned()),
             }
             assert!(!before.matches(&current));
         }

@@ -21,11 +21,29 @@ impl Host {
     /// `[predict]` 变了（或 `force`）才重建 Predictor；最后刷新云朵标识、菜单勾选与设置窗口。
     pub fn apply_config(&mut self, force: bool) {
         let config = self.settings.config().clone();
-        let draft_context = self.engine.application() == Some("com.apple.Terminal")
-            && (self.live.draft_configured() || config.live_translation.terminal_draft)
+        crate::imk::editor::configuration_changed(&config);
+        let draft_context = self.live.draft_configured_in(self.engine.application())
+            || crate::imk::draft_policy::allowed(
+                &config.live_translation,
+                self.engine.application(),
+                false,
+            )
             || !self.live.draft.source().is_empty();
+        let raw_changed = self.live.update_raw_policy(&config.general);
+        if (raw_changed
+            || self
+                .live
+                .configuration_changed(&config.live_translation, force))
+            && draft_context
+        {
+            if !raw_changed && config.live_translation.enabled {
+                self.suspend_draft("configuration_changed");
+            } else {
+                self.cancel_draft("configuration_changed");
+            }
+        }
         let live_changed = self.live.configure(&config.live_translation, force);
-        if live_changed && draft_context {
+        if (live_changed || raw_changed) && draft_context {
             self.engine.clear();
             self.reset_session(None, Vec::new());
             self.window.hide();

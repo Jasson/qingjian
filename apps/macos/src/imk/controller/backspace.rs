@@ -1,11 +1,11 @@
-//! Terminal 草稿的普通 ⌫ 入口；先核验当前应用，再优先删除待选拼音。
+//! 翻译草稿的普通 ⌫ 入口；先核验当前应用，再优先删除待选拼音。
 
 use super::QingjianInputController;
 use crate::host;
 use crate::imk::{TextClient, secure_input};
 
 impl QingjianInputController {
-    pub(super) fn handle_terminal_backspace(&self, client: TextClient<'_>, repeat: bool) -> bool {
+    pub(super) fn handle_draft_backspace(&self, client: TextClient<'_>, repeat: bool) -> bool {
         let observation = host::with(|h| h.live_observation_token());
         let Some(observation) = observation else {
             trace_rejection(51, true, repeat, "host_busy");
@@ -21,14 +21,14 @@ impl QingjianInputController {
                 trace_rejection(51, true, repeat, "input_changed_during_client_read");
                 return None;
             }
-            if !h.accept_live_application(application.as_deref()) || !h.terminal_draft_active() {
-                trace_rejection(51, true, repeat, "not_terminal_draft");
+            if !h.accept_live_application(application.as_deref()) || !h.draft_active() {
+                trace_rejection(51, true, repeat, "not_translation_draft");
                 return None;
             }
             let pinyin_before = h.engine.composition().text().chars().count();
             let draft_before = h.live.draft.committed().chars().count();
             let was_paused = h.live.paused;
-            let (composing, changed) = h.backspace_terminal_draft()?;
+            let (composing, changed) = h.backspace_draft()?;
             let pinyin_after = h.engine.composition().text().chars().count();
             let draft_after = h.live.draft.committed().chars().count();
             if !repeat {
@@ -42,9 +42,7 @@ impl QingjianInputController {
         .flatten();
         let Some((composing, changed, remaining, draft_length)) = result else {
             // 已核实转到其他应用时，让该应用正常处理此退格；不操作旧草稿。
-            return application
-                .as_deref()
-                .is_none_or(|app| app == "com.apple.Terminal");
+            return host::with(|h| h.draft_active()).unwrap_or(true);
         };
         if composing {
             self.refresh(client);
@@ -52,7 +50,7 @@ impl QingjianInputController {
             self.render(client);
         }
         host::with(|h| {
-            if !h.terminal_draft_active() {
+            if !h.draft_active() {
                 return;
             }
             let notice = if composing && !changed {

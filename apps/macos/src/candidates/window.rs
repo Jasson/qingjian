@@ -51,11 +51,19 @@ impl CandidateWindow {
 
     /// 显示一帧。`anchor` 是光标行的屏幕矩形，窗口贴在它下方，放不下就放上方。
     pub fn show(&mut self, frame: Frame, anchor: NSRect) {
+        if crate::imk::editor::session_owned() {
+            self.hide();
+            return;
+        }
         self.show_at(frame, anchor, false);
     }
 
     /// 独立翻译条放在光标上方，只处理自绘动作，不抢输入焦点。
     pub fn show_translation(&mut self, frame: Frame, anchor: NSRect, avoid: Option<NSRect>) {
+        if crate::imk::editor::session_owned() {
+            self.hide();
+            return;
+        }
         self.show_at(frame, anchor, true);
         self.panel.setIgnoresMouseEvents(!self.view.uses_bitmap());
         if let Some(avoid) = avoid {

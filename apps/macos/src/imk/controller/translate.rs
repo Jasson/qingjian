@@ -94,6 +94,9 @@ impl QingjianInputController {
         sense: usize,
         client: TextClient<'_>,
     ) -> bool {
+        if crate::imk::editor::session_owned() {
+            return true;
+        }
         let composing = host::with(|h| !h.engine.composition().is_empty()).unwrap_or(false);
         if !composing {
             return false;

@@ -38,13 +38,15 @@ pub enum Feature {
     VocabularyTranslation,
     /// 本机 Ollama 实时中英互译。
     LiveTranslation,
-    /// 系统 Terminal 专用的译文草稿输出。
-    TerminalDraft,
+    /// macOS 按应用启用、排除与恢复的翻译草稿。
+    TranslationDraft,
+    /// macOS 可聚焦的独立翻译草稿编辑窗。
+    FocusedDraftEditor,
 }
 
 impl Feature {
     #[cfg(test)]
-    pub const ALL: [Self; 18] = [
+    pub const ALL: [Self; 19] = [
         Self::AuxCode,
         Self::SwitchKeys,
         Self::SystemCtrlSpace,
@@ -62,7 +64,8 @@ impl Feature {
         Self::CloudRequestControls,
         Self::VocabularyTranslation,
         Self::LiveTranslation,
-        Self::TerminalDraft,
+        Self::TranslationDraft,
+        Self::FocusedDraftEditor,
     ];
 
     /// 当前平台显示这一项。
@@ -106,7 +109,9 @@ impl Feature {
             Self::CloudRequestControls => [Todo, Yes, Todo],
             // Linux 还没接释义兜底
             Self::VocabularyTranslation => [Yes, Yes, Todo],
-            Self::LiveTranslation | Self::TerminalDraft => [Yes, Todo, Todo],
+            Self::LiveTranslation | Self::TranslationDraft | Self::FocusedDraftEditor => {
+                [Yes, Todo, Todo]
+            }
         }
     }
 
@@ -131,7 +136,8 @@ impl Feature {
             Self::CloudRequestControls => "按需云联想与请求节奏",
             Self::VocabularyTranslation => "生词本整句翻译",
             Self::LiveTranslation => "本地实时中英互译",
-            Self::TerminalDraft => "终端译文上屏（草稿模式）",
+            Self::TranslationDraft => "翻译草稿模式",
+            Self::FocusedDraftEditor => "可聚焦翻译草稿窗",
         }
     }
 
@@ -167,11 +173,13 @@ impl Feature {
                 (PageId::Shortcuts, "复制实时译文"),
                 (PageId::Shortcuts, "用实时译文替换选中内容"),
             ],
-            Self::TerminalDraft => &[
-                (PageId::Language, "终端译文上屏（草稿模式）"),
-                (PageId::Shortcuts, "输出终端草稿译文"),
-                (PageId::Shortcuts, "输出终端草稿原文"),
-                (PageId::Shortcuts, "取消终端整段草稿"),
+            Self::FocusedDraftEditor => &[(PageId::Shortcuts, "打开翻译草稿窗")],
+            Self::TranslationDraft => &[
+                (PageId::Language, "翻译草稿模式"),
+                (PageId::Language, "不使用草稿的应用"),
+                (PageId::Shortcuts, "输出草稿译文"),
+                (PageId::Shortcuts, "输出草稿原文"),
+                (PageId::Shortcuts, "取消整段草稿"),
             ],
             Self::SystemCtrlSpace
             | Self::EnglishPunctuation

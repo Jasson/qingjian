@@ -16,17 +16,21 @@ use crate::host;
 use crate::menubar;
 use draft_route::DraftKeyRoute;
 
+mod application;
+mod archive;
 mod backspace;
 mod click;
 mod command;
 mod commit;
 mod display;
+mod draft_output;
 mod draft_route;
 mod draft_shortcut;
 mod entry_diagnostics;
 mod live;
 mod output_guard;
 mod panel;
+mod prepared_client;
 mod tap;
 mod text;
 mod translate;
@@ -76,10 +80,18 @@ define_class!(
         // define_class! 会把返回类型转成 ObjC BOOL，方法体里不能用 `return`，逻辑放在下面的 inherent impl
         #[unsafe(method(handleEvent:client:))]
         fn handle_event(&self, event: Option<&NSEvent>, client: Option<&AnyObject>) -> bool {
+            let diagnostic = crate::imk::draft_diagnostics::begin(event, client.is_some(), || self.is_current_controller());
             entry_diagnostics::observe(self, event, client);
-            match (event, client) {
-                (Some(event), Some(client)) => {
-                    let client = TextClient::new(client);
+            let intercepted = catch_panic("focusedOwnerRoute", || event.zip(client).and_then(|(event, client)| crate::imk::editor::intercept_host(event, TextClient::new(client))))
+                .unwrap_or_else(|| Some(crate::imk::editor::session_owned()));
+            let handled = if let Some(handled) = intercepted { handled } else { match (event, client) {
+                (Some(event), Some(object)) => match catch_panic("prepareEvent", || crate::imk::editor::owner::Owner::legacy_route(|| self.client_for_event(object, event.r#type() == NSEventType::KeyDown)).unwrap_or(prepared_client::PreparedClient::Consume))
+                    .unwrap_or_else(|| {
+                        diagnostic.panicked();
+                        prepared_client::PreparedClient::uncertain(event.r#type() == NSEventType::KeyDown, self.is_current_controller())
+                    }) {
+                    prepared_client::PreparedClient::Ready(client) => {
+                    diagnostic.prepared("ready");
                     // panic 拦下后把缓冲区原样上屏，这个按键交还给应用
                     let staged = client.stages_output();
                     let has_pending = host::with(|h| !h.live.draft.source().is_empty() || !h.engine.composition().is_empty()).unwrap_or(true);
@@ -94,17 +106,52 @@ define_class!(
                     }
                     let handled = catch_panic("handleEvent", || self.dispatch_event(event, client, &mut route))
                         .unwrap_or_else(|| {
+                            diagnostic.panicked();
                             recover_from_panic(Some(client));
                             false
                         });
-                    let departed_terminal = event.keyCode() == 51 && staged && self.is_current_controller()
-                        && host::with(|h| h.engine.application().is_some_and(|app| app != "com.apple.Terminal")).unwrap_or(false);
-                    if departed_terminal { handled } else {
+                    let departed_draft = event.keyCode() == 51 && staged && self.is_current_controller()
+                        && host::with(|h| !h.draft_active()).unwrap_or(false);
+                    if departed_draft { handled } else {
                         route.consume_fallback(staged || client.stages_output(), event.r#type() == NSEventType::KeyDown, handled)
                     }
-                }
-                _ => false,
-            }
+                    },
+                    prepared_client::PreparedClient::Consume => { diagnostic.prepared("consume"); true },
+                    prepared_client::PreparedClient::Pass => { diagnostic.prepared("pass"); false },
+                },
+                _ => { diagnostic.prepared("missing_event_or_client"); false },
+            } };
+            diagnostic.finish(handled, || self.is_current_controller());
+            handled
+        }
+
+        // SDK 的两个 getter 返回 autoreleased 对象；原始指针透传不增加 retain/autorelease。
+        #[unsafe(method(composedString:))]
+        fn diagnostic_composed_string(&self, sender: Option<&AnyObject>) -> *mut AnyObject {
+            crate::imk::draft_diagnostics::callback("composedString", || self.is_current_controller(), || unsafe {
+                msg_send![super(self), composedString: sender]
+            })
+        }
+
+        #[unsafe(method(originalString:))]
+        fn diagnostic_original_string(&self, sender: Option<&AnyObject>) -> *mut AnyObject {
+            crate::imk::draft_diagnostics::callback("originalString", || self.is_current_controller(), || unsafe {
+                msg_send![super(self), originalString: sender]
+            })
+        }
+
+        #[unsafe(method(updateComposition))]
+        fn diagnostic_update_composition(&self) {
+            crate::imk::draft_diagnostics::callback("updateComposition", || self.is_current_controller(), || unsafe {
+                let _: () = msg_send![super(self), updateComposition];
+            });
+        }
+
+        #[unsafe(method(cancelComposition))]
+        fn diagnostic_cancel_composition(&self) {
+            crate::imk::draft_diagnostics::callback("cancelComposition", || self.is_current_controller(), || unsafe {
+                let _: () = msg_send![super(self), cancelComposition];
+            });
         }
 
         /// 应用要求立刻结束本次输入（切换焦点、切换输入法等）。
@@ -113,13 +160,17 @@ define_class!(
             modifiers::cancel_tap("commitComposition");
             let client = client.map(TextClient::new);
             let done = catch_panic("commitComposition", || {
+                crate::imk::editor::sync_frontmost();
+                if crate::imk::editor::session_owned() { return; }
                 if let Some(client) = client && !client.stages_output() {
                     self.commit_raw(client);
                 }
                 host::with(|h| {
                     h.cancel_prediction();
-                    // Terminal 会在回显过程中隐式要求结束 marked，真实焦点和显式键事件另有边界。
-                    if host::context_policy(None, h.engine.application())
+                    if h.draft_active() || !h.live.draft.source().is_empty() {
+                        h.suspend_draft("commit_composition");
+                        h.refresh_live_actions();
+                    } else if host::context_policy(None, h.engine.application())
                         != qingjian_predict::live::context::ContextPolicy::EventOnly
                     {
                         h.pause_live_translation("commit_composition");
@@ -139,8 +190,10 @@ define_class!(
             modifiers::sync_caps();
             crate::imk::hotkey::disable();
             crate::imk::backspace_tap::disable();
+            crate::imk::editor::sync_frontmost();
             self.set_active();
             let done = catch_panic("activateServer", || {
+                if crate::imk::editor::session_owned() { return; }
                 // 会话级把键盘布局覆盖为 ABC（QWERTY）：系统会沿用「上一次使用的拉丁键盘布局」，
                 // 从德语 QWERTZ 等布局切入时 z/y 互换（#577）。这是 IMKTextInput 协议方法，
                 // 只作用于本输入法收到的按键事件，不改用户的全局布局；objc2-input-method-kit
@@ -152,16 +205,20 @@ define_class!(
                 }
                 // 用户要往 [apps] 里加应用时，从这条日志抄 bundle identifier
                 let bundle = sender.and_then(|s| TextClient::new(s).bundle_identifier());
+                let anchor = sender.map(|s| TextClient::new(s).caret_rect());
                 if let Some(bundle) = &bundle {
                     tracing::debug!(%bundle, "当前应用");
                 }
                 host::with(|h| {
-                    h.reset_live_translation("activate");
-                    h.engine.set_application(bundle);
+                    if !self.is_current_controller() { return; }
+                    h.suspend_draft("activate");
+                    h.accept_live_application(bundle.as_deref());
+                    if let Some(anchor) = anchor { h.anchor = anchor; }
                     h.refresh_text_replacements();
                     h.reload_config_if_changed();
                     h.indicator.activate();
                     h.watch.start();
+                    h.refresh_live_actions();
                 });
             });
             if done.is_none() {
@@ -171,6 +228,7 @@ define_class!(
                 crate::imk::hotkey::activate();
                 crate::imk::backspace_tap::activate();
                 entry_diagnostics::arm(self);
+                crate::imk::draft_diagnostics::arm(self);
             }
         }
 
@@ -195,8 +253,12 @@ define_class!(
         #[unsafe(method(deactivateServer:))]
         fn deactivate_server(&self, sender: Option<&AnyObject>) {
             entry_diagnostics::disarm(self);
+            crate::imk::draft_diagnostics::disarm(self);
             tracing::info!("deactivateServer");
+            crate::imk::editor::sync_frontmost();
             modifiers::cancel_tap("deactivateServer");
+            if crate::imk::editor::session_owned() { return; }
+            if !self.is_current_controller() { return; }
             if self.is_current_controller() {
                 crate::imk::hotkey::disable();
                 crate::imk::backspace_tap::disable();
@@ -205,9 +267,9 @@ define_class!(
             let client = sender.map(TextClient::new);
             let done = catch_panic("deactivateServer", || {
                 let staged = client.is_some_and(|client| client.stages_output())
-                    || host::with(|h| h.terminal_draft_active()).unwrap_or(true);
+                    || host::with(|h| h.draft_active()).unwrap_or(true);
                 if !staged && let Some(client) = client { self.commit_raw(client); }
-                if staged { host::with(|h| h.cancel_terminal_draft("deactivate_draft")); }
+                if staged { host::with(|h| h.suspend_draft("deactivate_draft")); }
                 // 切换输入源时无论如何都收掉候选框，不能留一个孤儿窗口在屏幕上
                 host::with(|h| {
                     h.cancel_prediction();
@@ -312,6 +374,9 @@ impl QingjianInputController {
         }
         if self.in_login_window() {
             modifiers::cancel_tap("loginwindow");
+            crate::imk::hotkey::disable();
+            crate::imk::backspace_tap::disable();
+            host::with(|h| h.cancel_draft("login_window"));
             return false;
         }
         if modifiers::needs_finish() && !self.finish_mode_switch(client) {
@@ -387,18 +452,20 @@ impl QingjianInputController {
         let live_typed = event
             .charactersIgnoringModifiers()
             .and_then(|text| text.to_string().to_ascii_lowercase().chars().next());
-        if let Some(consumed) = self.handle_live_shortcut(pressed, live_typed, client) {
+        if let Some(consumed) =
+            self.handle_live_shortcut(pressed, live_typed, client, event.isARepeat())
+        {
             return consumed;
         }
         if let Some(consumed) = self.handle_draft_shortcut(event, client) {
             return consumed;
         }
-        if client.stages_output() && *draft_route == DraftKeyRoute::PassTerminal {
+        if client.stages_output() && *draft_route == DraftKeyRoute::PassApplication {
             backspace::trace_rejection(key, true, event.isARepeat(), "empty_draft_passthrough");
             return false;
         }
         if client.stages_output() && key == 51 && !command && !control && !option {
-            return self.handle_terminal_backspace(client, event.isARepeat());
+            return self.handle_draft_backspace(client, event.isARepeat());
         }
         if client.stages_output() && (command || control) {
             backspace::trace_rejection(key, true, event.isARepeat(), "modified_command");
@@ -433,7 +500,7 @@ impl QingjianInputController {
                     key,
                     text.as_deref(),
                     pressed.is_empty(),
-                    h.terminal_draft_active(),
+                    h.draft_active(),
                     &h.live.draft.source(),
                     !h.engine.composition().is_empty(),
                     h.translation.is_some() || h.engine.symbol_panel().is_some(),
@@ -442,7 +509,7 @@ impl QingjianInputController {
             .unwrap_or(false);
             if pass && self.is_current_controller() {
                 // 外层同样需要明确透传，否则草稿兜底仍会把这个空格吞掉。
-                *draft_route = DraftKeyRoute::PassTerminal;
+                *draft_route = DraftKeyRoute::PassApplication;
                 return false;
             }
         }
@@ -523,4 +590,11 @@ impl QingjianInputController {
             _ => false,
         }
     }
+}
+
+#[cfg(test)]
+mod tests;
+
+pub(crate) fn editor_controller() -> Option<Retained<QingjianInputController>> {
+    click::active_controller()
 }

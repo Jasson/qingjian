@@ -229,7 +229,7 @@ impl<T: Eq + Clone> State<T> {
             last.count = last.count.saturating_add(1);
             return;
         }
-        // 同一会话只保留有限的确认意图；超额仍消费按键，不能落入终端执行。
+        // 同一会话只保留有限的确认意图；超额仍消费按键，不能落入应用触发发送或执行。
         if self.queue.len() < 32 {
             self.queue.push_back(Entry { action, count: 1 });
         }

@@ -1,4 +1,4 @@
-//! 仅在当前 Terminal 草稿会话注册系统热键；Carbon 回调不直接读写应用。
+//! 仅在当前符合应用策略的草稿会话注册系统热键；Carbon 回调不直接读写应用。
 
 mod binding;
 mod event_type;
@@ -12,7 +12,6 @@ use std::cell::{Cell, RefCell};
 
 use objc2::rc::Retained;
 use objc2::{MainThreadMarker, sel};
-use objc2_app_kit::NSWorkspace;
 use objc2_foundation::NSTimer;
 use qingjian_platform::KeyCombo;
 
@@ -91,6 +90,10 @@ pub(crate) fn sync() {
 }
 
 fn sync_inner() {
+    if crate::imk::editor::session_owned() {
+        disable();
+        return;
+    }
     if MainThreadMarker::new().is_none() {
         return;
     }
@@ -98,10 +101,11 @@ fn sync_inner() {
         disable();
         return;
     };
-    if secure_input::enabled() || !terminal_is_frontmost() {
+    if secure_input::enabled() {
         disable();
         return;
     }
+    let foreground = crate::imk::frontmost::identity().filter(|(_, pid)| *pid > 0);
     // 借不到 Host 时保留意图，下一轮再核验，不能把“正在重入”误当关闭。
     if controller::active_controller_id() != Some(owner) {
         disable();
@@ -109,15 +113,28 @@ fn sync_inner() {
     }
     let desired = host::with(|h| {
         let config = h.settings.config();
-        let binding = Binding::for_session(
-            config.shortcut.insert_live_translation,
-            Some(owner),
-            h.engine.application(),
-            config.live_translation.enabled,
-            config.live_translation.terminal_draft,
-        );
+        let binding = if h.draft_active()
+            && crate::imk::draft_policy::matches(
+                &config.live_translation,
+                h.engine.application(),
+                foreground.as_ref().map(|(app, _)| app.as_str()),
+                false,
+            ) {
+            Binding::for_session(
+                config.shortcut.insert_live_translation,
+                Some(owner),
+                h.engine.application(),
+                &config.live_translation,
+            )
+        } else {
+            None
+        };
         (binding, h.live_observation_token())
     });
+    if controller::active_controller_id() != Some(owner) {
+        disable();
+        return;
+    }
     if let Some((binding, observation)) = desired {
         reconcile(binding, Some(observation));
         update_timer();
@@ -207,14 +224,6 @@ fn receive(generation: u32, pressed: bool) {
     } else if pressed {
         tracing::debug!(target: "live_translation", generation, reason = "stale_or_repeat", "忽略系统译文热键");
     }
-}
-
-pub(crate) fn terminal_is_frontmost() -> bool {
-    // NSWorkspace 不依赖旧 IMK app 缓存，读取必须在 Host 借用之外。
-    NSWorkspace::sharedWorkspace()
-        .frontmostApplication()
-        .and_then(|application| application.bundleIdentifier())
-        .is_some_and(|bundle| bundle.to_string() == "com.apple.Terminal")
 }
 
 fn poll() {
