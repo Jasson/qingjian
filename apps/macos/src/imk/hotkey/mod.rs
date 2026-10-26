@@ -114,6 +114,7 @@ fn sync_inner() {
     let desired = host::with(|h| {
         let config = h.settings.config();
         let binding = if h.draft_active()
+            && !config.shortcut.paste_draft_blocks_translation()
             && crate::imk::draft_policy::matches(
                 &config.live_translation,
                 h.engine.application(),

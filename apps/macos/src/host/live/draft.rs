@@ -4,6 +4,20 @@ use crate::candidates::Preedit;
 use crate::host::Host;
 
 impl Host {
+    /// 显式粘贴可启动任意纯文本草稿，不能受自动首字母门槛限制。
+    pub fn paste_live_draft(&mut self, text: &str) {
+        if !self.draft_active() || !self.engine.composition().is_empty() || text.is_empty() {
+            return;
+        }
+        self.live.resume();
+        if !self.live.draft.commit(text) {
+            return;
+        }
+        self.live.automatic.restore();
+        self.submit_live_translation();
+        self.live_action_notice("已追加到原文草稿；换行按单行输入转换为空格");
+    }
+
     /// 系统 tap 的同一输入凭据批次一次编辑、一次查询与刷新，不写 native 原文。
     pub fn backspace_draft_batch(&mut self, count: u16) {
         if !self.draft_active() || count == 0 {

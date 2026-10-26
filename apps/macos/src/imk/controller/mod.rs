@@ -25,6 +25,7 @@ mod command;
 mod commit;
 mod display;
 mod draft_output;
+mod draft_paste;
 mod draft_route;
 mod draft_shortcut;
 mod entry_diagnostics;
@@ -454,12 +455,12 @@ impl QingjianInputController {
         let live_typed = event
             .charactersIgnoringModifiers()
             .and_then(|text| text.to_string().to_ascii_lowercase().chars().next());
+        if let Some(consumed) = self.handle_draft_shortcut(event, client) {
+            return consumed;
+        }
         if let Some(consumed) =
             self.handle_live_shortcut(pressed, live_typed, client, event.isARepeat())
         {
-            return consumed;
-        }
-        if let Some(consumed) = self.handle_draft_shortcut(event, client) {
             return consumed;
         }
         if client.stages_output() && *draft_route == DraftKeyRoute::PassApplication {

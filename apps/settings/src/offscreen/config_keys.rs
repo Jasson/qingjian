@@ -384,11 +384,27 @@ fn draft_exclusion_editor_saves_deduplicates_cancels_and_clears_real_array() {
 
 #[test]
 fn focused_editor_recorder_saves_disables_and_resets_without_changing_output() {
-    if !crate::support::Feature::FocusedDraftEditor.here() {
+    draft_recorder_roundtrip(
+        Shortcut::OpenTranslationDraft,
+        crate::support::Feature::FocusedDraftEditor,
+    );
+}
+
+#[test]
+fn paste_draft_recorder_saves_disables_and_resets_without_changing_output() {
+    draft_recorder_roundtrip(
+        Shortcut::PasteDraft,
+        crate::support::Feature::TranslationDraft,
+    );
+}
+
+fn draft_recorder_roundtrip(action: Shortcut, feature: crate::support::Feature) {
+    if !feature.here() {
         return;
     }
     let dir = std::env::temp_dir().join(format!(
-        "qingjian-focused-draft-recorder-{}",
+        "qingjian-draft-recorder-{}-{}",
+        action.config_key().1,
         std::process::id()
     ));
     let path = dir.join("config.toml");
@@ -423,15 +439,10 @@ fn focused_editor_recorder_saves_disables_and_resets_without_changing_output() {
         KeyPress::new(KeyCode::Backspace, Modifiers::default()),
     ] {
         harness.frame();
-        for message in harness
-            .click(bamboo_slip::Key::ROOT.child(("recorder", Shortcut::OpenTranslationDraft)))
-        {
+        for message in harness.click(bamboo_slip::Key::ROOT.child(("recorder", action))) {
             harness.settings.update(message);
         }
-        assert_eq!(
-            harness.settings.recording,
-            Some(Shortcut::OpenTranslationDraft)
-        );
+        assert_eq!(harness.settings.recording, Some(action));
         harness.frame();
         let messages = harness
             .interaction
@@ -439,14 +450,18 @@ fn focused_editor_recorder_saves_disables_and_resets_without_changing_output() {
             .messages;
         assert!(messages.iter().any(|message| matches!(
             message,
-            Message::Recorded(Shortcut::OpenTranslationDraft, _)
+            Message::Recorded(recorded, _) if *recorded == action
         )));
         for message in messages {
             harness.settings.update(message);
         }
         let loaded = Config::load(&path).unwrap();
         assert_eq!(
-            loaded.shortcut.open_translation_draft,
+            if action == Shortcut::PasteDraft {
+                loaded.shortcut.paste_draft
+            } else {
+                loaded.shortcut.open_translation_draft
+            },
             if press.key == KeyCode::Backspace {
                 None
             } else {
@@ -459,9 +474,22 @@ fn focused_editor_recorder_saves_disables_and_resets_without_changing_output() {
         );
     }
     harness.settings.update(Message::ResetShortcuts);
+    let reset = Config::load(&path).unwrap().shortcut;
     assert_eq!(
-        Config::load(&path).unwrap().shortcut.open_translation_draft,
-        Some("control+option+e".parse().unwrap())
+        if action == Shortcut::PasteDraft {
+            reset.paste_draft
+        } else {
+            reset.open_translation_draft
+        },
+        Some(
+            if action == Shortcut::PasteDraft {
+                "command+v"
+            } else {
+                "control+option+e"
+            }
+            .parse()
+            .unwrap()
+        )
     );
     std::fs::remove_dir_all(dir).unwrap();
 }

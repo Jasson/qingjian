@@ -7,4 +7,8 @@ pub(crate) enum Action {
     InsertOriginal,
 
     CancelDraft,
+
+    PasteDraft,
+
+    PasteConflict,
 }

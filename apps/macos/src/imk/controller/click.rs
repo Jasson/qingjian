@@ -59,6 +59,11 @@ pub(crate) fn dispatch_system_translation_hotkey(
     let valid = host::with(|h| {
         h.draft_active()
             && h.settings.config().shortcut.insert_live_translation == Some(combo)
+            && !h
+                .settings
+                .config()
+                .shortcut
+                .paste_draft_blocks_translation()
             && observation.matches(&h.live_observation_token())
     });
     let Some(valid) = valid else {
@@ -86,6 +91,11 @@ pub(crate) fn dispatch_system_translation_hotkey(
     let valid = host::with(|h| {
         h.draft_active()
             && h.settings.config().shortcut.insert_live_translation == Some(combo)
+            && !h
+                .settings
+                .config()
+                .shortcut
+                .paste_draft_blocks_translation()
             && observation.matches(&h.live_observation_token())
     });
     let Some(valid) = valid else {

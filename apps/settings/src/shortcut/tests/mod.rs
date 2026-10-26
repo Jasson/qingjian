@@ -1,6 +1,8 @@
 //! 快捷键录制校验与拒绝保存回归。
 
 use super::*;
+
+mod paste;
 use bamboo_slip::Modifiers as Held;
 
 fn press(key: &str, held: Held) -> KeyPress {

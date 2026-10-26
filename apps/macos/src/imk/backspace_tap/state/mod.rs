@@ -104,7 +104,12 @@ impl<T: Eq + Clone> State<T> {
             && ((self.content
                 && matches!(
                     self.bindings.action(key, flags),
-                    Some(Action::InsertOriginal | Action::CancelDraft)
+                    Some(
+                        Action::InsertOriginal
+                            | Action::CancelDraft
+                            | Action::PasteDraft
+                            | Action::PasteConflict
+                    )
                 ))
                 || self.owns_action_repeat(key, repeat))
     }

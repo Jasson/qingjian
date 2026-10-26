@@ -23,7 +23,7 @@ pub(crate) fn dispatch_draft_tap(batch: &Batch<ObservationToken>) -> Option<bool
         return Some(false);
     }
     let guard = OutputGuard::Tap(batch.generation, batch.serial, &batch.token);
-    if batch.action == Action::InsertOriginal {
+    if matches!(batch.action, Action::InsertOriginal | Action::PasteDraft) {
         let client: Option<Retained<AnyObject>> = unsafe { msg_send![&*controller, client] };
         let Some(client) = client else {
             return Some(false);
@@ -35,7 +35,11 @@ pub(crate) fn dispatch_draft_tap(batch: &Batch<ObservationToken>) -> Option<bool
         {
             return Some(false);
         }
-        return controller.output_tapped_original(TextClient::new(&client), guard);
+        return if batch.action == Action::PasteDraft {
+            controller.paste_draft(TextClient::new(&client), Some(guard))
+        } else {
+            controller.output_tapped_original(TextClient::new(&client), guard)
+        };
     }
     host::with(|h| {
         if !h.draft_active() || !guard.valid(h) {
@@ -47,7 +51,13 @@ pub(crate) fn dispatch_draft_tap(batch: &Batch<ObservationToken>) -> Option<bool
                 h.cancel_draft("draft_shortcut_cancelled");
                 backspace_tap::action_consumed(batch.generation, batch.serial);
             }
-            Action::InsertOriginal => unreachable!(),
+            Action::PasteConflict => {
+                backspace_tap::action_consumed(batch.generation, batch.serial);
+                h.live_action_notice(
+                    "粘贴草稿快捷键与已有动作冲突，未粘贴或输出；请修改快捷键设置",
+                );
+            }
+            Action::InsertOriginal | Action::PasteDraft => unreachable!(),
         }
         true
     })

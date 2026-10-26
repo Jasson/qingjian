@@ -13,6 +13,7 @@ pub enum Shortcut {
     CopyLiveTranslation,
     ReplaceLiveTranslation,
     InsertLiveTranslation,
+    PasteDraft,
     OpenTranslationDraft,
     InsertOriginal,
     CancelDraft,
@@ -22,7 +23,7 @@ pub enum Shortcut {
 
 impl Shortcut {
     #[cfg(test)]
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 13] = [
         Self::Translation,
         Self::TranslationSecond,
         Self::DeleteCandidate,
@@ -31,6 +32,7 @@ impl Shortcut {
         Self::CopyLiveTranslation,
         Self::ReplaceLiveTranslation,
         Self::InsertLiveTranslation,
+        Self::PasteDraft,
         Self::OpenTranslationDraft,
         Self::InsertOriginal,
         Self::CancelDraft,
@@ -47,6 +49,7 @@ impl Shortcut {
             Self::CopyLiveTranslation => "复制实时译文",
             Self::ReplaceLiveTranslation => "用实时译文替换选中内容",
             Self::InsertLiveTranslation => "输出草稿译文",
+            Self::PasteDraft => "粘贴到草稿",
             Self::OpenTranslationDraft => "打开翻译草稿窗",
             Self::InsertOriginal => "输出草稿原文",
             Self::CancelDraft => "取消整段草稿",
@@ -65,6 +68,7 @@ impl Shortcut {
             Self::CopyLiveTranslation => ("shortcut", "copy_live_translation"),
             Self::ReplaceLiveTranslation => ("shortcut", "replace_live_translation"),
             Self::InsertLiveTranslation => ("shortcut", "insert_live_translation"),
+            Self::PasteDraft => ("shortcut", "paste_draft"),
             Self::OpenTranslationDraft => ("shortcut", "open_translation_draft"),
             Self::InsertOriginal => ("shortcut", "insert_original"),
             Self::CancelDraft => ("shortcut", "cancel_draft"),
@@ -82,7 +86,8 @@ impl Shortcut {
             Self::CopyLiveTranslation
             | Self::ReplaceLiveTranslation
             | Self::OpenTranslationDraft
-            | Self::InsertLiveTranslation => "按修饰键 + 字母，退格禁用",
+            | Self::InsertLiveTranslation
+            | Self::PasteDraft => "按修饰键 + 字母，退格禁用",
             Self::InsertOriginal | Self::CancelDraft => "Enter / Esc / 修饰字母；⌫禁用",
             Self::AuxCodeKey => "按一个符号键",
         }
@@ -104,6 +109,10 @@ impl Shortcut {
                 .unwrap_or_else(|| "未启用".to_owned()),
             Self::ReplaceLiveTranslation => shortcut
                 .replace_live_translation
+                .map(combo_label)
+                .unwrap_or_else(|| "未启用".to_owned()),
+            Self::PasteDraft => shortcut
+                .paste_draft
                 .map(combo_label)
                 .unwrap_or_else(|| "未启用".to_owned()),
             Self::InsertLiveTranslation => shortcut
@@ -129,6 +138,7 @@ impl Shortcut {
                 | Self::ReplaceLiveTranslation
                 | Self::OpenTranslationDraft
                 | Self::InsertLiveTranslation
+                | Self::PasteDraft
                 | Self::InsertOriginal
                 | Self::CancelDraft
         ) && press.key == KeyCode::Backspace
@@ -173,7 +183,8 @@ impl Shortcut {
             | Self::CopyLiveTranslation
             | Self::ReplaceLiveTranslation
             | Self::OpenTranslationDraft
-            | Self::InsertLiveTranslation => {
+            | Self::InsertLiveTranslation
+            | Self::PasteDraft => {
                 let key = match &press.key {
                     KeyCode::Character(text) => single(text).filter(|key| {
                         if matches!(
@@ -182,6 +193,7 @@ impl Shortcut {
                                 | Self::ReplaceLiveTranslation
                                 | Self::OpenTranslationDraft
                                 | Self::InsertLiveTranslation
+                                | Self::PasteDraft
                         ) {
                             key.is_ascii_alphabetic()
                         } else {
@@ -197,6 +209,7 @@ impl Shortcut {
                             | Self::ReplaceLiveTranslation
                             | Self::OpenTranslationDraft
                             | Self::InsertLiveTranslation
+                            | Self::PasteDraft
                     ) {
                         "要修饰键加一个字母"
                     } else {
@@ -237,6 +250,18 @@ impl Shortcut {
 
 fn action_value(action: Shortcut, value: DraftShortcut, config: &Config) -> Result<String, String> {
     let keys = &config.shortcut;
+    if action == Shortcut::PasteDraft
+        && let DraftShortcut::Combo(combo) = value
+    {
+        let mut proposed = *keys;
+        proposed.paste_draft = Some(combo);
+        if proposed.paste_draft_conflicts() && keys.open_translation_draft == Some(combo) {
+            return Err(format!(
+                "跟「{}」重复了",
+                Shortcut::OpenTranslationDraft.title()
+            ));
+        }
+    }
     let combos = [
         (
             Shortcut::TranslateSelection,
@@ -255,6 +280,10 @@ fn action_value(action: Shortcut, value: DraftShortcut, config: &Config) -> Resu
             Shortcut::InsertLiveTranslation,
             keys.insert_live_translation.map(DraftShortcut::Combo),
         ),
+        (
+            Shortcut::PasteDraft,
+            keys.paste_draft.map(DraftShortcut::Combo),
+        ),
         (Shortcut::InsertOriginal, keys.insert_original),
         (Shortcut::CancelDraft, keys.cancel_draft),
     ];
@@ -265,6 +294,7 @@ fn action_value(action: Shortcut, value: DraftShortcut, config: &Config) -> Resu
                 | Shortcut::CopyLiveTranslation
                 | Shortcut::ReplaceLiveTranslation
                 | Shortcut::InsertLiveTranslation
+                | Shortcut::PasteDraft
                 | Shortcut::InsertOriginal
                 | Shortcut::CancelDraft
         )

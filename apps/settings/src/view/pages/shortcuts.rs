@@ -155,6 +155,13 @@ pub fn shortcuts(ui: &mut Ui<Message>, page: &Page) -> Result<Vec<NodeId>, Rende
             rows.push(recorder(
                 ui,
                 page,
+                Shortcut::PasteDraft,
+                "已有草稿时追加剪贴板纯文本；有待选拼音先完成选字，空草稿保留应用正常粘贴；录制时按 Backspace 禁用",
+                false,
+            )?);
+            rows.push(recorder(
+                ui,
+                page,
                 Shortcut::InsertOriginal,
                 "输出已确认原文加未选原始按键，不选高亮候选；回车、Esc或修饰字母可录制，退格禁用",
                 false,

@@ -2,6 +2,7 @@
 
 mod actions;
 mod held;
+mod paste;
 
 use super::State;
 use crate::imk::backspace_tap::event::Event;

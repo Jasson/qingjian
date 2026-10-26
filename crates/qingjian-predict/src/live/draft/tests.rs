@@ -122,3 +122,23 @@ fn raw_original_combines_confirmed_and_typed_keys_without_the_highlighted_previe
     );
     assert!(draft.original_output_with_pending(" ").is_none());
 }
+
+#[test]
+fn pasted_plain_text_appends_without_interpreting_letters_and_rejects_controls_atomically() {
+    let mut draft = TerminalDraft::default();
+    assert!(draft.commit("已有原文："));
+    let before = draft.revision();
+    assert!(draft.commit("hello nihk\r\nsecond line\n第三行"));
+    assert_eq!(draft.committed(), "已有原文：hello nihk second line 第三行");
+    assert_ne!(before, draft.revision());
+    assert!(
+        draft
+            .translation_output("已有原文：", "旧译文", true)
+            .is_none()
+    );
+    let source = draft.source();
+    let revision = draft.revision();
+    assert!(!draft.commit("valid prefix\tinvalid"));
+    assert_eq!(draft.source(), source);
+    assert_eq!(draft.revision(), revision);
+}

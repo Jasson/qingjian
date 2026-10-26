@@ -60,6 +60,14 @@ impl Settings {
             );
         }
         if Feature::TranslationDraft.here() {
+            self.write(
+                "shortcut",
+                "paste_draft",
+                defaults
+                    .paste_draft
+                    .map(|combo| combo.key_string())
+                    .unwrap_or_default(),
+            );
             for (key, value) in [
                 ("insert_original", defaults.insert_original),
                 ("cancel_draft", defaults.cancel_draft),

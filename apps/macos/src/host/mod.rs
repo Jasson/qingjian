@@ -236,9 +236,16 @@ pub fn with<R>(f: impl FnOnce(&mut Host) -> R) -> Option<R> {
                         h.live_observation_token(),
                         configured,
                         !h.engine.composition().is_empty() || !h.live.draft.source().is_empty(),
-                        crate::imk::backspace_tap::Bindings::for_config(
-                            &h.settings.config().shortcut,
-                        ),
+                        {
+                            let bindings = crate::imk::backspace_tap::Bindings::for_config(
+                                &h.settings.config().shortcut,
+                            );
+                            if h.translation.is_some() || h.engine.symbol_panel().is_some() {
+                                bindings.without_paste()
+                            } else {
+                                bindings
+                            }
+                        },
                     )
                 })
             });

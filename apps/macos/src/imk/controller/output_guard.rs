@@ -28,6 +28,11 @@ impl OutputGuard<'_> {
         let (registered, observation) = match self {
             Self::Carbon(generation, observation) => (
                 hotkey::current(generation)
+                    && !host
+                        .settings
+                        .config()
+                        .shortcut
+                        .paste_draft_blocks_translation()
                     && hotkey::binding_combo(generation).is_some_and(|combo| {
                         host.settings.config().shortcut.insert_live_translation == Some(combo)
                     }),

@@ -60,6 +60,13 @@ pub struct ShortcutConfig {
     )]
     pub insert_live_translation: Option<KeyCombo>,
 
+    /// macOS：将剪贴板纯文本追加到已有草稿，空串禁用。
+    #[serde(
+        deserialize_with = "super::optional_key_combo::deserialize_letter",
+        serialize_with = "super::optional_key_combo::serialize"
+    )]
+    pub paste_draft: Option<KeyCombo>,
+
     /// macOS：打开可聚焦翻译草稿窗，空串禁用。
     #[serde(
         deserialize_with = "super::optional_key_combo::deserialize_letter",
@@ -121,6 +128,13 @@ impl Default for ShortcutConfig {
                 key: 'v',
                 ..KeyCombo::TRANSLATE_DEFAULT
             }),
+            paste_draft: Some(KeyCombo {
+                key: 'v',
+                modifiers: Modifiers {
+                    command: true,
+                    ..Modifiers::default()
+                },
+            }),
             open_translation_draft: Some(KeyCombo {
                 key: 'e',
                 ..KeyCombo::TRANSLATE_DEFAULT
@@ -134,6 +148,43 @@ impl Default for ShortcutConfig {
 }
 
 impl ShortcutConfig {
+    /// Carbon 注册和执行均须排除与粘贴相同的输出键，避免旧注册抢先输出。
+    pub fn paste_draft_blocks_translation(&self) -> bool {
+        self.paste_draft
+            .zip(self.insert_live_translation)
+            .is_some_and(|(paste, output)| {
+                paste.modifiers == output.modifiers && paste.key.eq_ignore_ascii_case(&output.key)
+            })
+    }
+
+    /// 粘贴配置冲突时运行时消费组合并提示，禁止同时输出旧稿或漏给应用。
+    pub fn paste_draft_conflicts(&self) -> bool {
+        let Some(paste) = self.paste_draft else {
+            return false;
+        };
+        if !paste.key.is_ascii_alphabetic() || paste.modifiers.is_empty() {
+            return true;
+        }
+        let same = |other: KeyCombo| {
+            paste.modifiers == other.modifiers && paste.key.eq_ignore_ascii_case(&other.key)
+        };
+        [
+            Some(self.translate_selection),
+            Some(self.predict),
+            self.copy_live_translation,
+            self.replace_live_translation,
+            self.insert_live_translation,
+            self.open_translation_draft,
+        ]
+        .into_iter()
+        .flatten()
+        .any(same)
+            || [self.insert_original, self.cancel_draft]
+                .into_iter()
+                .flatten()
+                .any(|action| matches!(action, DraftShortcut::Combo(combo) if same(combo)))
+    }
+
     /// 新草稿入口与已有动作冲突时只禁用新入口，保留旧快捷键的优先级。
     pub fn open_translation_draft_conflicts(&self) -> bool {
         let Some(open) = self.open_translation_draft else {
@@ -214,6 +265,30 @@ impl ShortcutConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn paste_draft_defaults_round_trips_disables_and_preserves_translation_override() {
+        let parsed: ShortcutConfig =
+            toml::from_str("insert_live_translation = 'command+shift+y'").unwrap();
+        let paste = parsed.paste_draft.unwrap();
+        assert_eq!(paste.key, 'v');
+        assert!(paste.modifiers.command);
+        assert!(!paste.modifiers.control && !paste.modifiers.option && !paste.modifiers.shift);
+        assert!(!parsed.paste_draft_conflicts());
+        let round_trip: ShortcutConfig =
+            toml::from_str(&toml::to_string(&parsed).unwrap()).unwrap();
+        assert_eq!(round_trip, parsed);
+        let disabled: ShortcutConfig = toml::from_str("paste_draft = ''").unwrap();
+        assert!(disabled.paste_draft.is_none());
+        let custom: ShortcutConfig = toml::from_str("paste_draft = 'control+option+p'").unwrap();
+        assert_eq!(custom.paste_draft.unwrap().key, 'p');
+        let conflict: ShortcutConfig =
+            toml::from_str("insert_live_translation = 'command+v'").unwrap();
+        assert!(conflict.paste_draft_conflicts());
+        assert!(conflict.paste_draft_blocks_translation());
+        assert!(!parsed.paste_draft_blocks_translation());
+        assert!(toml::from_str::<ShortcutConfig>("paste_draft = 'v'").is_err());
+    }
 
     #[test]
     fn optional_punctuation_and_extra_page_keys_round_trip() {

@@ -179,6 +179,7 @@ impl Feature {
                 (PageId::Language, "不使用草稿的应用"),
                 (PageId::Shortcuts, "输出草稿译文"),
                 (PageId::Shortcuts, "输出草稿原文"),
+                (PageId::Shortcuts, "粘贴到草稿"),
                 (PageId::Shortcuts, "取消整段草稿"),
             ],
             Self::SystemCtrlSpace

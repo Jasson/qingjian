@@ -334,6 +334,8 @@ copy_live_translation = "control+option+c"
 replace_live_translation = "control+option+r"
 # macOS Terminal 草稿模式：手动输出最新整段译文到应用，不自动执行；空串禁用
 insert_live_translation = "control+option+v"
+# macOS：已有草稿时追加剪贴板纯文本；空态交给应用，空串禁用草稿粘贴
+paste_draft = "command+v"
 # Terminal 草稿：输出原文（已确认文字+未选原始按键），或一次取消整段；只接受 enter / escape 或修饰键+字母，空串禁用
 insert_original = "enter"
 cancel_draft = "escape"
