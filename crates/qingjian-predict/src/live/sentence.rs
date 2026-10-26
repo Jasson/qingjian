@@ -70,8 +70,17 @@ impl SentenceTracker {
     }
 
     pub fn source(&self) -> String {
+        self.source_with_start().0
+    }
+
+    /// 与 source 相同的句界，同时返回包含候选预览的当前句起点。
+    pub fn source_with_start(&self) -> (String, usize) {
         let text = format!("{}{}", self.committed, self.preview);
-        current_sentence(&text).trim().to_owned()
+        let sentence = current_sentence(&text);
+        (
+            sentence.trim().to_owned(),
+            text.len() - sentence.trim_start().len(),
+        )
     }
 
     /// 当前已上屏句子的 UTF-8 字节范围，去掉前导空白、保留尾部空白。

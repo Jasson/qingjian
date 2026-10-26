@@ -31,6 +31,8 @@ pub struct LiveSession {
 
     pub source: String,
 
+    pub automatic: qingjian_predict::live::AutomaticSource,
+
     pub request_id: Option<u64>,
 
     pub paused: bool,
@@ -70,6 +72,7 @@ impl LiveSession {
             translator: None,
             monitor: LiveMonitor::new(mtm),
             source: String::new(),
+            automatic: Default::default(),
             request_id: None,
             paused: false,
             last_context: None,
@@ -162,6 +165,7 @@ impl LiveSession {
 
     pub fn resume(&mut self) {
         if super::editing::resume(&mut self.paused, &mut self.source) {
+            self.automatic.finish(&self.source, false);
             self.action_notice = None;
         }
     }
@@ -178,6 +182,7 @@ impl LiveSession {
             translator.cancel();
         }
         self.source.clear();
+        self.automatic = Default::default();
         self.request_id = None;
         self.paused = false;
         self.last_context = None;

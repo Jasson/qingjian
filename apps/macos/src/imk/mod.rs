@@ -19,6 +19,7 @@ use std::any::Any;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 pub use client::TextClient;
+pub(crate) use controller::restore_current_draft_from_menu;
 pub use controller::{QingjianInputController, click, panel_mouse, refresh_live_actions};
 
 /// 在 ObjC 运行时回调的边界拦住 panic。`define_class!` 生成的方法是系统直接调的，panic 穿过去整个进程就没了，
@@ -71,4 +72,8 @@ fn panic_message(payload: &(dyn Any + Send)) -> &str {
         .copied()
         .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
         .unwrap_or("<非文字 payload>")
+}
+
+pub(crate) fn controller_active() -> bool {
+    controller::active_controller_id().is_some()
 }

@@ -18,7 +18,11 @@ define_class!(
         #[unsafe(method(menuAction:))]
         fn menu_action(&self, sender: Option<&AnyObject>) {
             if let Some(action) = super::action_from_sender(sender) {
-                host::with(|h| h.perform(action));
+                if action == super::MenuAction::RestoreCurrentDraft {
+                    crate::imk::restore_current_draft_from_menu();
+                } else {
+                    host::with(|h| h.perform(action));
+                }
             }
         }
     }

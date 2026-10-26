@@ -25,22 +25,20 @@ use std::path::PathBuf;
 use objc2_app_kit::{NSPasteboard, NSPasteboardTypeString};
 use objc2_foundation::{NSProcessInfo, NSRect, NSString};
 use qingjian_core::{
-    Candidate, CandidateKind, CloudWord, Engine, FuzzyRules, Language, ModeKeys, NoInputLogger,
-    Prediction,
+    Candidate, CandidateKind, CloudWord, Engine, Language, NoInputLogger, Prediction,
 };
 use qingjian_learning::InputLog;
 use qingjian_platform::extra_dictionaries;
 use qingjian_platform::{
-    Appearance, AppsConfig, CandidateRenderer, DEFAULT_ENGLISH_CANDIDATES_ON, DictionariesConfig,
-    HighlightKeys, KeyCombo, LEARNING_LANGUAGE_OFF, LayoutMode, LocalModelConfig, LogLevel,
-    Modifiers, PAGE_KEY_OPTIONS, PreeditMode, Scheme, ShortcutConfig, UpdateChannel,
+    AppsConfig, DictionariesConfig, HighlightKeys, KeyCombo, LayoutMode, LocalModelConfig,
+    Modifiers, PreeditMode,
 };
 use qingjian_predict::{API_USAGE_FILE, ConnectionTest, PredictConfig, PredictError};
 
 use crate::app::{Settings, logging, paths};
 use crate::candidates::{CandidateWindow, Preedit};
-use crate::menubar::{InputMenu, MenuAction, ModeIndicator};
-use crate::preferences::{PreferencesWindow, Setting, SettingValue, UpdateStatus};
+use crate::menubar::{InputMenu, ModeIndicator};
+use crate::preferences::{PreferencesWindow, UpdateStatus};
 
 use cloud::{CloudTestMonitor, PredictMonitor};
 use config::{ConfigWatch, TextReplacement};

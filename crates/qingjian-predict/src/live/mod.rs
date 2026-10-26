@@ -1,6 +1,7 @@
 //! 本机模型实时翻译：维护句子预览，以可取消的后台请求更新整句译文。
 
 mod archive;
+mod automatic_input;
 mod candidate;
 mod config;
 pub mod context;
@@ -24,3 +25,7 @@ pub use translator::LiveTranslator;
 mod replacement_tests;
 
 pub use candidate::{MAX_REPLACEMENT_UNITS, ReplacementCandidate};
+
+pub use automatic_input::{
+    AutomaticSource, automatic_translation_visible, passes_automatic_empty, starts_automatic_source,
+};

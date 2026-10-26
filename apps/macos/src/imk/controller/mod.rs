@@ -17,7 +17,8 @@ use crate::menubar;
 use draft_route::DraftKeyRoute;
 
 mod application;
-mod archive;
+pub(crate) mod archive;
+pub(crate) use archive::restore_current_draft_from_menu;
 mod backspace;
 mod click;
 mod command;
@@ -235,7 +236,7 @@ define_class!(
         /// 系统输入源菜单（菜单栏旗帜图标）每次展开前来取输入法自己的条目。
         #[unsafe(method_id(menu))]
         fn menu(&self) -> Option<Retained<NSMenu>> {
-            host::with(|h| h.menu.ns_menu())
+            host::with(|h| { h.menu.sync_restore(h.can_restore_from_menu()); h.menu.ns_menu() })
         }
 
         /// 输入源菜单里点了条目：IMK 转发到控制器，sender 是带 IMKCommandMenuItem 的字典。
@@ -243,6 +244,7 @@ define_class!(
         fn menu_action(&self, sender: Option<&AnyObject>) {
             match menubar::action_from_sender(sender) {
                 Some(menubar::MenuAction::OpenSymbolPanel) => self.open_panel_from_menu(),
+                Some(menubar::MenuAction::RestoreCurrentDraft) => restore_current_draft_from_menu(),
                 Some(action) => {
                     host::with(|h| h.perform(action));
                 }
@@ -472,6 +474,23 @@ impl QingjianInputController {
             host::with(|h| h.live_action_notice("草稿模式仅支持尾部编辑，请使用输出或取消按钮"));
             return true;
         }
+        if !command && !control {
+            let text = event.characters().map(|text| text.to_string());
+            let pass = host::with(|h| {
+                draft_route.pass_empty_input(
+                    text.as_deref(),
+                    h.draft_active(),
+                    &h.live.draft.source(),
+                    !h.engine.composition().is_empty(),
+                    h.translation.is_some() || h.engine.symbol_panel().is_some(),
+                    h.engine.takes_question_mark(),
+                )
+            })
+            .unwrap_or(false);
+            if pass && self.is_current_controller() {
+                return false;
+            }
+        }
         if !self.observe_live_context(client) {
             backspace::trace_rejection(
                 key,
@@ -492,26 +511,6 @@ impl QingjianInputController {
             && let Some(consumed) = self.handle_panel_key(event, key, pressed, client)
         {
             return consumed;
-        }
-        if key == 49 && pressed.is_empty() {
-            let text = event.characters().map(|text| text.to_string());
-            let pass = host::with(|h| {
-                DraftKeyRoute::passes_empty_space(
-                    key,
-                    text.as_deref(),
-                    pressed.is_empty(),
-                    h.draft_active(),
-                    &h.live.draft.source(),
-                    !h.engine.composition().is_empty(),
-                    h.translation.is_some() || h.engine.symbol_panel().is_some(),
-                )
-            })
-            .unwrap_or(false);
-            if pass && self.is_current_controller() {
-                // 外层同样需要明确透传，否则草稿兜底仍会把这个空格吞掉。
-                *draft_route = DraftKeyRoute::PassApplication;
-                return false;
-            }
         }
         // 高亮还在第一个时按 ↑ 打开符号面板；长按连发的不算，免得往回翻过头弹出来
         if key == 126
@@ -579,7 +578,7 @@ impl QingjianInputController {
             _ => None,
         };
         if let Some(selector) = selector {
-            return self.handle_command(selector, client);
+            return self.handle_command(selector, client, pressed.is_empty());
         }
         if command || control {
             host::with(|h| h.pause_live_translation("application_shortcut"));

@@ -118,7 +118,11 @@ CandidateLayout 保持 `set_cloud` 的首页末尾布局与本地首项；`set_c
 通用翻译草稿的普通退格使用当前目标应用进程专属的 `CGEventTapCreateForPid` active 入口，仅已识别且未排除的前台应用、当前青简 controller、live／draft_enabled 开启且内部 draft／composition 非空、非 Secure Input 时接管 keycode 51；Command／Option／Control 组合与 Fn forward-delete 不进入此路径，非目标事件透传，不读取按键文本或模拟按键。删空后当前按住周期仍隔离至 key-up，松开后下一次空态普通退格透传；失焦、配置变化、私密状态等边界清队列并退出接管。键盘监听预检不能证明 active filter 有权限，实际 Create 失败作为不可用证据，浮窗提示检查辅助功能／输入监控并重新激活重试；生产不自动弹权限框或打开设置。timeout／user-disabled 停止接管并保留草稿，提示重新激活，不盲目 enable 或频繁重建。既有 Carbon 输出热键及用户 `shift+command+y` 配置不变。单元回放或 tap 创建成功只验证各自环节，不能作为普通退格真机端到端修复的证据。
 
 翻译草稿的普通 keycode 51 在上下文采样前走独立退格入口：核验当前控制器、客户端应用和 observation 后，恢复内部编辑状态，先删 Engine 拼音，再删已确认草稿；不受普通连续追踪的 paused 门禁影响。候选窗口强制保留拼音行，翻译浮窗显示光标附近的待选按键，元数据诊断不记录输入正文。
-翻译草稿的普通单空格在快捷键、翻译审阅和符号面板处理后重新核验：仅 `draft.source().is_empty()` 且 composition 为空时透传，不将前导空格记入草稿；同时将本次 IMK 路由改为 `PassTerminal`，避免外层 `consume_fallback` 再次吞键，已有草稿与拼音选字仍走原文本路径。
+自动翻译空态资格集中在 predict 的 `live::automatic_input`：`starts_automatic_source` 接受字母／汉字并排除 emoji 字形；`AutomaticSource` 保存当前稿件是否已启动，已有稿件删到纯数字或空白仍可见，删空／reset 后清资格，显式恢复及 Core 符号选择可重建。普通非草稿输入用 `observe_sentence` 对接现有 `SentenceTracker.source_with_start`，换句后重新判资格，纯数字／标点／emoji 不送翻译；不改断句规则或宿主普通输入方式。独立手动 editor 不使用此自动首键策略。
+
+macOS 自动草稿在已配置快捷键之后、上下文采样／标点转换／提交正文之前，用 `DraftKeyRoute::pass_empty_input` 核验 source 与 composition 为空、无翻译审阅／符号占用及无 Core `?` 问字前缀入口；纯数字、标点、空格与 emoji 原样透传，并由同一生产方法将路由写为 `PassApplication`，外层 `consume_fallback` 不得吞回。已有稿件、表达式／问字／符号面板沿用 Core 路线，显式选符号不会被自动首键门禁丢弃。自动条只以资格与实际 source／draft／composition 显示，开窗／恢复能力和残留 notice 不独立撑开。
+
+原生菜单「恢复当前应用草稿」复用现有按应用 archive，不新增设置或快捷键。IMK 菜单与状态项菜单都转到独立 controller 入口：先在 Host 内只核验资格，释放借用后才取客户端并调用原有恢复核验；owner／current／secure／应用与 observation 在 IPC 后复查。菜单置于既有可点击动作组，能力在输入会话菜单读取、状态项轮询及翻译展示时刷新，空态无需浮窗承载恢复入口。
 退格入口取证独立放在 `handleEvent` 的 event/client 匹配之前，诊断异常只丢弃该条记录、不 recover 或更改返回值。翻译草稿激活时按 controller arm 并递增诊断 session；每次新增入口诊断总预算 16（arm 1、普通聚合心跳 1、nil 两类各 1、删除类别最多 12），无时间截止，每类删除间隔至少一秒，已记录后的 autorepeat 不再耗预算。nil／staged=false／Host 不可用不阻断选中记录，普通键不输出键码、flags、字符或逐键时间序列；单一 BS／DEL 仅固定类别。日志只取缓存 Host 状态，不做客户端应用 IPC，不改变既有订阅、删除逻辑或系统热键。配置热开后需重新激活开始诊断；旧 controller 的迟到回调不消耗新会话预算。
 
 `live::context::{ContextSnapshot, ContextGuard}` 按平台提供的 `ContextPolicy` 处理宿主证据；以下完整／局部／不可读判定用于常规宿主：范围与实际返回长度均为 UTF-16 单元，只有受控历史读回匹配（或覆盖 4096 单元的完整有限回看窗口）才能从低信任建立 `Full`；足长但不匹配的未知片段仍为 `Partial`。活动 marked 原点空片段、短窗口与不可读返回不否定受控历史，也不沿用此前的完整能力。只有连续 `Full`、无 `active_marked` 且真实空范围读取成功时，空前文才触发清空。此判断是能力推断：若宿主完整伪装为可读空文档，接口证据无法绝对区分，需结合重置原因日志诊断。显式焦点、鼠标、导航、非 marked 选区与已知应用切换仍清空；代理对象地址变化及暂时缺失应用标识不代表换焦点。重置会同时清除 Guard 能力状态。
@@ -300,6 +304,8 @@ Windows Server 自绘候选窗（GDI）按 `Frame.columns` / `column_ems` 画矩
 
 IMK 输入法，源码按 `app / host / imk / candidates / menubar / preferences` 分目录。
 
+普通非草稿翻译条可见且无组词时，无修饰 `Esc` 在命令分发中调用 `reset_live_translation("escape")`，清除缓存、递增 epoch、取消 translator 并隐藏窗口；晚到结果同时受 worker 修订号和 Host request_id 拦截。没有翻译条时不消费按键，草稿、候选、符号面板与选区翻译保留原优先级；修饰键加 Esc 不触发此清空动作。
+
 - 中英模式独立保存在 `imk::modifiers` 的主线程进程级状态，由输入处理、菜单栏和候选帧共用，不再直接把 Caps Lock 状态当当前模式。
   `[shortcut] switch_mode` 缺省 `shift`，支持多选 `shift` / `control` / `ctrl+alt+space`；IMK 显式接收修饰键变化，以公共修饰位判定按下、设备低位仅作辅助；单击修饰键在松开时判定，期间其他按键或失焦均取消，组合键不触发切换。诊断日志记录事件键码、修饰位与切换状态，不记录输入文本。
   Caps Lock 状态变化仍显式同步中英，之后 Shift 可再次切换；指示灯仅表示硬件状态。英文模式下仅在 Caps Lock 亮着时根据 Shift 修正系统送来的大小写，保持默认小写、Shift 大写。
@@ -307,7 +313,7 @@ IMK 输入法，源码按 `app / host / imk / candidates / menubar / preferences
 
 通用翻译草稿由 `live_translation.draft_enabled` 控制，默认开启但依赖默认关闭的主开关；所有已知非排除、非 loginwindow／secure 应用生效。`TerminalDraft` 类型名留作兼容实现名，不再表示仅限 Terminal；单行输出规范化仍共享，CR／LF 为空格，其他 C0／DEL 拒绝。浮窗显示原文与译文，输出译文必须匹配最新整段且无待选按键；输出原文使用 confirmed＋raw，不采用高亮／不展开双拼，Enter默认输出原文但不发送Enter；输出清空后下一独立Enter交宿主。Esc默认一次取消整稿，可配置bare Enter/Escape或modifiedASCIIletter，空串禁用，`draft_shortcuts_conflict`真时两个新动作停用，旧动作不变。`KeyRecorder::allow_escape`仅两新项开启，Esc可录、blur取消；键盘入口仍受native接管门禁，按钮兜底。
 
-微信独立草稿窗另有 `shortcut.open_translation_draft: Option<KeyCombo>`，缺省 `control+option+e`、空串禁用，录制器仅接受修饰键加 ASCII 字母。`open_translation_draft_conflicts()` 将开窗键与已有翻译／联想／草稿动作比较，冲突仅停用新开窗入口，原有 `insert_live_translation`（包含用户 `command+shift+y`）不改写、不失效。设置程序通过 `FocusedDraftEditor` 统一登记 macOS 支持、Windows／Linux 待实现；恢复默认覆盖新键，离屏生产控件测试覆盖录制保存、禁用、重置和保留现有译文输出配置。开窗为显式按钮／快捷键动作，仅要求实时翻译开启，不依赖全应用 `draft_enabled`；不自动接首键，Terminal 保持旧路线。独立编辑会话失焦保留，不串通用 archive。首次输出不能证明原输入框时保留稿并进入待确认状态，用户回目标框再按开窗键确认填入；任何编辑使待确认内容失效，需重新发起输出，目标仍不可确认时允许复制兜底，不自动发送。旧微信原位输入残留根因仍待定位，独立窗口属于新隔离路线，不能以类型检查或窗口截图宣称微信端到端修复。
+微信独立草稿窗另有 `shortcut.open_translation_draft: Option<KeyCombo>`，缺省 `control+option+e`、空串禁用，录制器仅接受修饰键加 ASCII 字母。`open_translation_draft_conflicts()` 将开窗键与已有翻译／联想／草稿动作比较，冲突仅停用新开窗入口，原有 `insert_live_translation`（包含用户 `command+shift+y`）不改写、不失效。设置程序通过 `FocusedDraftEditor` 统一登记 macOS 支持、Windows／Linux 待实现；恢复默认覆盖新键，离屏生产控件测试覆盖录制保存、禁用、重置和保留现有译文输出配置。开窗为显式按钮／快捷键动作，仅要求实时翻译开启，不依赖全应用 `draft_enabled`；不自动接首键，Terminal 保持旧路线。独立编辑会话失焦保留，不串通用 archive。首次输出不能证明原输入框时保留稿并进入待确认状态，用户回目标框再按开窗键确认填入；任何编辑使待确认内容失效，需重新发起输出，目标仍不可确认时允许复制兜底，不自动发送。当前用户已验证：微信加入 `draft_excluded_apps` 且 `general.preedit=both` 时，普通选字上屏正常；`preedit=window` 仍有原始字母残留。独立窗口属于新隔离路线，其实际自动激活／获焦尚未通过验证；标准 NSWindow 正控制在同一自动化环境也未获焦，不能以类型检查或窗口截图宣称微信端到端修复。
 
 独立窗的工作流控制权由主线程 `editor::owner::Owner` 的 `Idle / Opening(pid) / Visible(pid) / Pending(pid)` 保存，与瞬时 `KEYBOARD_OWNED` 分开。开窗在客户端同步 IPC 前进入 Opening，IMK 事件在客户端准备前经过统一门禁；持有控制权时旧候选窗、旧翻译条、Carbon 与退格 tap 不得重新启用。获焦成功才挂起普通 Host 草稿，开窗失败恢复原控制权和原有显示，不消费旧输入。失焦隐藏独立窗；无待确认时释放控制权并保留 Runtime，有待确认时仍拦截旧输出组合，普通宿主文字输入撤销 pending 后恢复普通路线。跨应用先隐藏、清待确认，再释放控制权，独立会话保留，Terminal 的旧路径可继续；重新开窗后需重新确认输出。`Owner::legacy_route` 用于真实 IMK 客户端准备回调，测试复用该入口与真实 Engine 会话回放；原生面板／真实应用的输入验证另行执行，不能以门禁测试代替。
 

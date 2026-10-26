@@ -55,6 +55,10 @@ impl Host {
         }
         self.live.resume();
         if self.draft_active() {
+            if !self.live.automatic.observe(text) {
+                self.render_live_translation();
+                return;
+            }
             if !self.live.draft.commit(text) {
                 self.live_action_notice("草稿不接受控制字符，请输入单行文字");
                 return;
@@ -93,6 +97,12 @@ impl Host {
                 .unwrap_or_else(|| self.engine.composition().text().to_owned())
         };
         if self.draft_active() {
+            self.live
+                .automatic
+                .observe(self.engine.composition().text());
+            if !self.live.automatic.observe(&preview) {
+                return;
+            }
             self.live.draft.preview(&preview);
         } else {
             self.live.tracker.preview(&preview);
@@ -101,11 +111,22 @@ impl Host {
     }
 
     fn submit_live_translation(&mut self) {
-        let source = if self.draft_active() {
-            self.live.draft.source()
+        let (source, sentence_start) = if self.draft_active() {
+            (self.live.draft.source(), None)
         } else {
-            self.live.tracker.source()
+            let (source, start) = self.live.tracker.source_with_start();
+            (source, Some(start))
         };
+        let composing = !self.engine.composition().is_empty();
+        if let Some(start) = sentence_start {
+            self.live
+                .automatic
+                .observe_sentence(&source, self.engine.composition().text(), start);
+        }
+        if composing && self.engine.question_mode() {
+            self.live.automatic.restore();
+        }
+        self.live.automatic.finish(&source, composing);
         if source == self.live.source {
             self.render_live_translation();
             return;
@@ -113,13 +134,18 @@ impl Host {
         self.live.source = source.clone();
         self.live.action_notice = None;
         self.live.display.begin(self.live.unavailable.as_deref());
-        if source.trim().is_empty() {
+        if source.trim().is_empty()
+            || !self
+                .live
+                .automatic
+                .visible(&source, &self.live.draft.source(), composing)
+        {
             if let Some(translator) = &mut self.live.translator {
                 translator.cancel();
             }
             self.live.monitor.stop();
             self.live.display.reset();
-            self.live.window.hide();
+            self.render_live_translation();
             return;
         }
         if let Some(translator) = &mut self.live.translator {
@@ -165,34 +191,29 @@ impl Host {
     }
 
     fn render_live_translation(&mut self) {
+        self.menu.sync_restore(self.can_restore_from_menu());
         if crate::imk::editor::session_owned() {
             self.window.hide();
             self.live.window.hide();
             return;
         }
         let draft = self.draft_active();
-        let empty = if draft {
-            self.live.source.is_empty()
-        } else {
-            self.live.source.trim().is_empty()
-        };
+        let empty = self.live.source.is_empty();
         let restorable = self.can_restore_draft();
         let shortcut_conflict = draft && self.settings.config().shortcut.draft_shortcuts_conflict();
-        let registration_error = draft
-            && (self.live.system_hotkey_notice.is_some()
-                || self.live.backspace_tap_notice.is_some()
-                || shortcut_conflict);
         let can_open_editor = self.live.active() && self.engine.application().is_some();
-        let visible = can_open_editor
-            || !empty
-            || registration_error
-            || restorable
-            || (draft && self.live.action_notice.is_some());
+        let visible = self.live.automatic.visible(
+            &self.live.source,
+            &self.live.draft.source(),
+            !self.engine.composition().is_empty(),
+        );
         if !visible || !self.live.active() {
             self.live.window.hide();
             return;
         }
-        let (text, status) = if empty {
+        let (text, status) = if !empty && self.live.source.trim().is_empty() {
+            ("原文仅含空白，可继续输入或取消", "翻译草稿模式")
+        } else if empty {
             (
                 if restorable {
                     "当前应用有草稿可恢复"

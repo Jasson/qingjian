@@ -79,6 +79,16 @@ impl Host {
         self.reset_live_translation(reason);
     }
 
+    pub fn can_restore_from_menu(&self) -> bool {
+        !crate::imk::editor::session_owned()
+            && crate::imk::controller_active()
+            && self.translation.is_none()
+            && self.engine.symbol_panel().is_none()
+            && self.can_restore_draft()
+            && self.engine.composition().is_empty()
+            && self.live.draft.source().is_empty()
+    }
+
     pub fn can_restore_draft(&self) -> bool {
         self.draft_active()
             && self
@@ -103,6 +113,7 @@ impl Host {
             self.live_action_notice("草稿未恢复，原文仍保存在当前应用的恢复列表中");
             return None;
         };
+        self.live.automatic.restore();
         self.refresh_draft_candidates();
         self.live_action_notice("草稿已恢复到青简，请确认输入位置；未向应用填入文字");
         Some((saved, self.live_observation_token()))

@@ -25,7 +25,12 @@ impl QingjianInputController {
             }
             return self.commit_raw(client);
         };
-        let Some(text) = host::with(|h| h.engine.commit(&candidate)) else {
+        let Some(text) = host::with(|h| {
+            if h.draft_active() && h.engine.symbol_panel().is_some() {
+                h.live.automatic.restore();
+            }
+            h.engine.commit(&candidate)
+        }) else {
             return false;
         };
         tracing::debug!(%text, "commit");
