@@ -139,6 +139,7 @@
   - [ ] 按需云联想与请求节奏：macOS、Linux
   - [ ] 生词本整句翻译：Linux
   - [ ] 本地实时中英互译：Windows、Linux
+  - [ ] 句末自动朗读译文：Windows、Linux
   - [ ] 翻译草稿模式：Windows、Linux
   - [ ] 可聚焦翻译草稿窗：Windows、Linux
 

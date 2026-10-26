@@ -30,6 +30,7 @@ use std::path::Path;
 use qingjian_core::FuzzyRules;
 use qingjian_predict::PredictConfig;
 use qingjian_predict::live::LiveTranslationConfig;
+use qingjian_predict::speech::SpeechConfig;
 use serde::{Deserialize, Serialize};
 use toml_edit::DocumentMut;
 
@@ -69,7 +70,7 @@ pub use update::{UpdateChannel, UpdateConfig};
 /// 用户配置文件（TOML）。所有平台同一份格式，缺省值全部在各分节的 `Default` 里。
 ///
 /// 配置文件是唯一事实源：菜单、设置窗口、手改文件三个入口都只写这个文件，再由壳热加载。
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
     /// 常规：学习语言、每页候选数、翻页键、外观。
@@ -99,6 +100,9 @@ pub struct Config {
 
     /// 本机 Ollama 实时中英互译，与云联想分开配置。
     pub live_translation: LiveTranslationConfig,
+
+    /// 句末译文通过本机 TTS 服务朗读，与翻译服务独立。
+    pub speech: SpeechConfig,
 
     /// 悬浮状态条（桌面上常驻、可拖动的中 / 英浮窗）。
     pub status_bar: StatusBarConfig,
@@ -404,6 +408,16 @@ model = "maternion/hy-mt2:1.8b"
 # 停键等待与单次请求超时（毫秒），继续输入会取消旧请求
 debounce_ms = 180
 timeout_ms = 5000
+
+[speech]
+# 句末自动朗读译文（目前仅 macOS），需同时开启 live_translation.enabled；默认关闭
+enabled = false
+# 先启动本机 Qwen3-TTS 服务，仅允许本机地址；202 表示排队，不表示已播放
+base_url = "http://127.0.0.1:8766"
+# 音色、语速（1.0 为正常速度）与服务请求超时（毫秒）
+voice = "Vivian"
+speed = 1.0
+timeout_ms = 3000
 
 [predict]
 # 云联想：把光标附近的文本发到下面的接口，让模型补全整句 / 联想下文。默认关闭。

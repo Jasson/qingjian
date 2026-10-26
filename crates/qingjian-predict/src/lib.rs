@@ -14,6 +14,7 @@ mod error;
 mod gloss;
 pub mod live;
 mod prompt;
+pub mod speech;
 mod suspension;
 mod usage;
 mod worker;

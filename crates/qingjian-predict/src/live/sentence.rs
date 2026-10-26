@@ -158,18 +158,18 @@ fn current_sentence(text: &str) -> &str {
     &text[if boundary { sentence_start } else { start }..]
 }
 
-fn is_terminal(ch: char) -> bool {
+pub(crate) fn is_terminal(ch: char) -> bool {
     matches!(ch, '。' | '.' | '?' | '？' | '!' | '！' | '\n' | '\r')
 }
 
-fn is_closer(ch: char) -> bool {
+pub(crate) fn is_closer(ch: char) -> bool {
     matches!(
         ch,
         '”' | '’' | '"' | '\'' | ')' | '）' | ']' | '】' | '}' | '》' | '」' | '』'
     )
 }
 
-fn period_ends(text: &str, chars: &[(usize, char)], index: usize) -> bool {
+pub(crate) fn period_ends(text: &str, chars: &[(usize, char)], index: usize) -> bool {
     let prev = index.checked_sub(1).map(|i| chars[i].1);
     let next = chars.get(index + 1).map(|(_, ch)| *ch);
     if prev == Some('.')

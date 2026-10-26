@@ -8,9 +8,9 @@ pub mod context;
 mod draft;
 mod editor;
 mod replacement;
-mod sentence;
+pub(crate) mod sentence;
 mod translation;
-mod translator;
+pub(crate) mod translator;
 
 pub use archive::{DraftArchive, SavedDraft};
 pub use config::LiveTranslationConfig;

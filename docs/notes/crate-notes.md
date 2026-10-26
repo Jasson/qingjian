@@ -114,6 +114,12 @@ CandidateLayout 保持 `set_cloud` 的首页末尾布局与本地首项；`set_c
 
 ## crates/qingjian-predict
 
+`speech::SpeechConfig` 对应顶级 `[speech]`，缺省关闭；`base_url=http://127.0.0.1:8766`、`voice=Vivian`、`speed=1.0`、`timeout_ms=3000`。配置缺节时按默认值读取，与 `[live_translation]`、云服务和既有快捷键独立。设置程序在「中英文 → 本地实时翻译」提供开关、服务地址、音色与 0.5–2.0 倍语速步进控件，开关依赖实时翻译开启；请求超时保留高级 TOML 配置。`Feature::TranslatedSpeech` 登记 macOS 支持、Windows/Linux 待实现；服务启动命令与用户边界见 `docs/user/input/live-translation.md`，202 仅为排队确认，不能作为已播放或 macOS 端到端通过的证据。
+
+`speech::SpeechCoordinator` 使用独立后台 worker，按已确认原文的句界逐句调用本机翻译，再提交 TTS 并轮询播放终态，不复用可能包含高亮候选的整稿预译。pending 上限 16，按键回调仅做有界入队；worker 顺序处理，代次与 session guard 拒绝取消后的旧任务、旧结果。下一句未完成部分的编辑不撤销上一句，已完成句发生修改则换代取消；输出清稿为新输入建立空基线但保留既有朗读任务，取消草稿、切应用、私密输入或关闭配置则取消队列。普通输入历史的前缀裁剪通过 `discard_prefix` 同步，不当作用户编辑或重读旧句。服务失败使当前代次失效并清除其待播，不无限重试或恢复后补播；新完成句使用新 session 再试。macOS 仅接入 committed source、轮询与状态提示，并在 Secure Input 等边界取消；既有快捷键不变。
+
+Rust 朗读模块 → Ollama → TTL `--no-play` 静音集成探针已通过（约 2.95 秒），只验证翻译、合成与终态链路，不证明实际按键或扬声器播放通过；后者仍由目标应用真机验收。
+
 `live` 提供独立的本地实时中英翻译，配置类型 `LiveTranslationConfig` 对应 `[live_translation]`：默认关闭，Ollama 原生接口地址 `http://localhost:11434`、模型 `maternion/hy-mt2:1.8b`、防抖 180 ms、超时 5000 ms。使用 Ollama 原生纯文本翻译请求，不复用要求 JSON 结果的云联想提示词或同步字词 `Translator`。本地请求与 `[predict]` 的模型、密钥、开关独立，无云端回退；源文、当前候选与断句状态由平台无关代码管理，壳只提交输入事件、轮询结果与显示独立悬浮条。新输入取消旧任务，结果按会话与版本匹配后展示。`allow_replace` 默认 false，仅允许用户选中与已有成功译文源文完全一致的文字后手动替换，不重新发翻译请求；复制不受该开关限制。`draft_enabled` 默认 true，仅与主开关 `enabled`（默认false）同时开启时使用输入法内草稿；`draft_excluded_apps` 默认空，按完整应用标识精确匹配、区分大小写、不支持通配符。`terminal_draft` 仅保留旧配置读取，不参与策略。设置程序提供多行应用排除编辑、保存／失焦写入真正数组，清空、去重与取消编辑可用。`[shortcut] copy_live_translation` / `replace_live_translation` / `insert_live_translation` 是 `Option<KeyCombo>`（空串禁用），缺省 `control+option+c` / `control+option+r` / `control+option+v`；设置录键器支持 Backspace 禁用、动作键冲突检查与恢复默认。
 通用翻译草稿的普通退格使用当前目标应用进程专属的 `CGEventTapCreateForPid` active 入口，仅已识别且未排除的前台应用、当前青简 controller、live／draft_enabled 开启且内部 draft／composition 非空、非 Secure Input 时接管 keycode 51；Command／Option／Control 组合与 Fn forward-delete 不进入此路径，非目标事件透传，不读取按键文本或模拟按键。删空后当前按住周期仍隔离至 key-up，松开后下一次空态普通退格透传；失焦、配置变化、私密状态等边界清队列并退出接管。键盘监听预检不能证明 active filter 有权限，实际 Create 失败作为不可用证据，浮窗提示检查辅助功能／输入监控并重新激活重试；生产不自动弹权限框或打开设置。timeout／user-disabled 停止接管并保留草稿，提示重新激活，不盲目 enable 或频繁重建。既有 Carbon 输出热键及用户 `shift+command+y` 配置不变。单元回放或 tap 创建成功只验证各自环节，不能作为普通退格真机端到端修复的证据。
 

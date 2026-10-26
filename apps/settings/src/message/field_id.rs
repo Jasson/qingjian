@@ -8,6 +8,8 @@ pub enum FieldId {
     ApiKey,
     LiveBaseUrl,
     LiveModel,
+    SpeechBaseUrl,
+    SpeechVoice,
     LiveDraftExcludedApps,
     PhraseCode,
     PhraseText,
@@ -17,20 +19,23 @@ pub enum FieldId {
 
 impl FieldId {
     /// 存进配置的那几个（短语的两个随卡片一起存）。
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 8] = [
         Self::BaseUrl,
         Self::Model,
         Self::ApiKey,
         Self::LiveBaseUrl,
         Self::LiveModel,
+        Self::SpeechBaseUrl,
+        Self::SpeechVoice,
         Self::LiveDraftExcludedApps,
     ];
 
     /// 对应配置分节里的键。
     pub fn key(self) -> &'static str {
         match self {
-            Self::BaseUrl | Self::LiveBaseUrl => "base_url",
+            Self::BaseUrl | Self::LiveBaseUrl | Self::SpeechBaseUrl => "base_url",
             Self::Model | Self::LiveModel => "model",
+            Self::SpeechVoice => "voice",
             Self::ApiKey => "api_key",
             Self::LiveDraftExcludedApps => "draft_excluded_apps",
             Self::PhraseCode => "code",

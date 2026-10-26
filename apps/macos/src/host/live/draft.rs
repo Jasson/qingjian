@@ -14,6 +14,7 @@ impl Host {
             return;
         }
         self.live.automatic.restore();
+        self.update_speech_text();
         self.submit_live_translation();
         self.live_action_notice("已追加到原文草稿；换行按单行输入转换为空格");
     }
@@ -26,6 +27,7 @@ impl Host {
         self.live.resume();
         let changed =
             super::editing::backspace_batch(&mut self.engine, &mut self.live.draft, count);
+        self.update_speech_text();
         self.refresh_draft_candidates();
         self.live_action_notice(if !changed && !self.engine.composition().is_empty() {
             "拼音光标前没有可删按键，请查看待选拼音中的光标位置"
@@ -65,6 +67,7 @@ impl Host {
         let (composing, changed) =
             super::editing::backspace(&mut self.engine, &mut self.live.draft);
         if !composing {
+            self.update_speech_text();
             self.submit_live_translation();
         }
         Some((composing, changed))

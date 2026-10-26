@@ -547,3 +547,28 @@ fn focused_draft_conflict_guard_rejects_invalid_programmatic_keys_and_normalizes
     });
     assert!(config.open_translation_draft_conflicts());
 }
+
+#[test]
+fn translated_speech_defaults_compatibility_and_settings_roundtrip() {
+    let legacy: Config = toml::from_str("[live_translation]\nenabled = true\n").unwrap();
+    assert!(!legacy.speech.enabled);
+    assert_eq!(legacy.speech.base_url, "http://127.0.0.1:8766");
+    assert_eq!(legacy.speech.voice, "Vivian");
+    assert_eq!(legacy.speech.speed, 1.0);
+    assert_eq!(legacy.speech.timeout_ms, 3000);
+    let dir = std::env::temp_dir().join(format!("qingjian-speech-config-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("config.toml");
+    std::fs::write(&path, "[live_translation]\nenabled = true\n").unwrap();
+    Config::set_bool(&path, "speech", "enabled", true).unwrap();
+    Config::set_value(&path, "speech", "base_url", "http://127.0.0.1:8767").unwrap();
+    let loaded = Config::load(&path).unwrap();
+    assert!(loaded.speech.enabled);
+    assert!(loaded.live_translation.enabled);
+    assert_eq!(loaded.speech.base_url, "http://127.0.0.1:8767");
+    assert_eq!(
+        toml::from_str::<Config>(&toml::to_string(&loaded).unwrap()).unwrap(),
+        loaded
+    );
+    std::fs::remove_dir_all(dir).unwrap();
+}
