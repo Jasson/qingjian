@@ -113,6 +113,9 @@ impl Host {
             self.live_action_notice("草稿未恢复，原文仍保存在当前应用的恢复列表中");
             return None;
         };
+        if let Some(speech) = &mut self.live.speech {
+            speech.baseline(self.live.draft.committed());
+        }
         self.live.automatic.restore();
         self.refresh_draft_candidates();
         self.live_action_notice("草稿已恢复到青简，请确认输入位置；未向应用填入文字");

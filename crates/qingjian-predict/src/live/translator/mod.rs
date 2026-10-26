@@ -124,7 +124,7 @@ impl LiveTranslator {
     }
 }
 
-fn local_endpoint(base: &str) -> Result<Url, String> {
+pub(crate) fn local_endpoint(base: &str) -> Result<Url, String> {
     let mut url = Url::parse(base).map_err(|_| "本机模型地址格式无效".to_owned())?;
     let loopback = match url.host_str() {
         Some("localhost") => {
@@ -152,7 +152,7 @@ fn local_endpoint(base: &str) -> Result<Url, String> {
     Ok(url)
 }
 
-async fn translate(
+pub(crate) async fn translate(
     client: &Client,
     endpoint: Url,
     model: &str,

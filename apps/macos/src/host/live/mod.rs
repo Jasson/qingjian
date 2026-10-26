@@ -11,6 +11,7 @@ mod observation;
 mod raw_policy;
 mod receipt;
 mod session;
+mod speech;
 mod ticker;
 
 pub(crate) use application::context_policy;
@@ -64,8 +65,16 @@ impl Host {
                 return;
             }
         } else {
+            let previous = self.live.tracker.committed().len();
             self.live.tracker.commit(text);
+            let removed = previous + text.len() - self.live.tracker.committed().len();
+            if removed > 0
+                && let Some(speech) = &mut self.live.speech
+            {
+                speech.discard_prefix(removed);
+            }
         }
+        self.update_speech_text();
         self.submit_live_translation();
     }
 
@@ -74,6 +83,7 @@ impl Host {
             self.backspace_draft();
         } else if self.live.active() && !self.live.paused {
             self.live.tracker.backspace();
+            self.update_speech_text();
             self.submit_live_translation();
         }
     }

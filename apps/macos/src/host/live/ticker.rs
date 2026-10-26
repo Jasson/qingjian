@@ -15,7 +15,7 @@ define_class!(
     impl LiveTicker {
         #[unsafe(method(tick:))]
         fn tick(&self, _timer: Option<&AnyObject>) {
-            let ready = crate::host::with(|h| h.poll_live_translation()).unwrap_or(false);
+            let ready = crate::host::with(|h| { h.poll_speech(); h.poll_live_translation() }).unwrap_or(false);
             crate::imk::hotkey::sync();
             if ready {
                 // 仅结果到达后读取一次客户端；不能在 Host 借用中做应用 IPC。

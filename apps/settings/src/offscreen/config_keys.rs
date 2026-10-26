@@ -211,6 +211,8 @@ fn every_key_the_settings_app_writes_is_read_by_the_ime() {
         (FieldId::ApiKey, "sk-test"),
         (FieldId::LiveBaseUrl, "http://127.0.0.1:11434"),
         (FieldId::LiveModel, "test-local-model"),
+        (FieldId::SpeechBaseUrl, "http://127.0.0.1:8767"),
+        (FieldId::SpeechVoice, "Ryan"),
         (
             FieldId::LiveDraftExcludedApps,
             "com.apple.Terminal\ncom.example.Editor",
@@ -491,5 +493,68 @@ fn draft_recorder_roundtrip(action: Shortcut, feature: crate::support::Feature) 
             .unwrap()
         )
     );
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn translated_speech_controls_require_translation_and_save_settings() {
+    if !crate::support::Feature::TranslatedSpeech.here() {
+        return;
+    }
+    let dir = std::env::temp_dir().join(format!("qingjian-speech-controls-{}", std::process::id()));
+    let path = dir.join("config.toml");
+    let mut settings = Settings::load(path.clone()).unwrap();
+    settings.page = PageId::Language;
+    let mut text = TextPainter::new(FontLibrary::system("zh-CN").unwrap());
+    settings.setup(&mut text);
+    let mut harness = Harness {
+        settings,
+        interaction: Interaction::new(),
+        text,
+        path: path.clone(),
+        problems: BTreeMap::new(),
+        checked: BTreeMap::new(),
+    };
+    let speech = bamboo_slip::Key::ROOT.child(("speech", "enabled"));
+    harness.frame();
+    let messages = harness.click(speech);
+    harness.apply(messages);
+    assert!(!harness.settings.config.speech.enabled);
+    harness.apply(vec![Message::set("live_translation", "enabled", true)]);
+    harness.frame();
+    let messages = harness.click(speech);
+    harness.apply(messages);
+    assert!(harness.settings.config.speech.enabled);
+    harness.frame();
+    let messages = harness.click(
+        bamboo_slip::Key::ROOT
+            .child("speech-speed")
+            .child("increase"),
+    );
+    harness.apply(messages);
+    assert_eq!(harness.settings.config.speech.speed, 1.1);
+    for (id, value) in [
+        (FieldId::SpeechBaseUrl, "http://127.0.0.1:8767"),
+        (FieldId::SpeechVoice, "Ryan"),
+    ] {
+        harness.apply(vec![
+            Message::Edit(
+                id,
+                Edit::Key(KeyPress::new(
+                    KeyCode::Character("a".to_owned()),
+                    Modifiers {
+                        command: true,
+                        ..Modifiers::default()
+                    },
+                )),
+            ),
+            Message::Edit(id, Edit::Text(TextInput::Insert(value.to_owned()))),
+            Message::Commit(id),
+        ]);
+    }
+    let loaded = Config::load(&path).unwrap();
+    assert_eq!(loaded.speech.base_url, "http://127.0.0.1:8767");
+    assert_eq!(loaded.speech.voice, "Ryan");
+    assert!(harness.problems.is_empty(), "{:?}", harness.problems);
     std::fs::remove_dir_all(dir).unwrap();
 }

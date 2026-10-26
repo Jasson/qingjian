@@ -2,7 +2,7 @@
 
 use bamboo_slip::taffy::{FlexDirection, NodeId, Style};
 use bamboo_slip::{
-    Button, Checkbox, RenderError, SettingRow, TextField, Ui, Visual, group, section_title,
+    Button, Checkbox, RenderError, SettingRow, Stepper, TextField, Ui, Visual, group, section_title,
 };
 use qingjian_platform::{DEFAULT_ENGLISH_CANDIDATES_ON, ShiftLetter, SwitchKey};
 
@@ -221,6 +221,59 @@ pub fn language(ui: &mut Ui<Message>, page: &Page) -> Result<Vec<NodeId>, Render
         }
         if Feature::TranslationDraft.here() {
             rows.insert(2, draft_excluded_apps(ui, page)?);
+        }
+        if Feature::TranslatedSpeech.here() {
+            rows.push(toggle_info(
+                ui,
+                page,
+                "句末自动朗读译文",
+                Some("默认关闭；先启动本机 TTS 服务。句末选字完成并取得最新译文后播放，不朗读高亮预译；已播出的声音无法撤回"),
+                ("speech", "enabled"),
+                config.speech.enabled,
+                !live.enabled,
+            )?);
+            rows.push(text_field(
+                ui,
+                page,
+                FieldId::SpeechBaseUrl,
+                "朗读服务地址",
+                Some("需先启动 Qwen3-TTS 本机服务；未启动时不播放，不影响打字和文字翻译"),
+                "http://127.0.0.1:8766",
+            )?);
+            rows.push(text_field(
+                ui,
+                page,
+                FieldId::SpeechVoice,
+                "朗读音色",
+                Some("填写本机模型支持的音色名，默认 Vivian；修改后按 Enter 保存"),
+                "Vivian",
+            )?);
+            let speed = config.speech.speed;
+            let label = format!("{speed:.1} 倍");
+            let control = Stepper::new(&label)
+                .limits(speed > 0.5, speed < 2.0)
+                .disabled(!live.enabled || !config.speech.enabled)
+                .build(
+                    ui,
+                    theme,
+                    "speech-speed",
+                    Message::set(
+                        "speech",
+                        "speed",
+                        ((speed * 10.0).round() - 1.0).clamp(5.0, 20.0) / 10.0,
+                    ),
+                    Message::set(
+                        "speech",
+                        "speed",
+                        ((speed * 10.0).round() + 1.0).clamp(5.0, 20.0) / 10.0,
+                    ),
+                )?;
+            rows.push(
+                SettingRow::new("朗读语速")
+                    .info("1.0 倍为正常速度；调整范围 0.5–2.0 倍；变速需本机 TTS 服务能找到 FFmpeg")
+                    .control(control)
+                    .build(ui, theme)?,
+            );
         }
         out.push(section_title(ui, theme, "本地实时翻译")?);
         out.push(group(ui, theme, &rows)?);

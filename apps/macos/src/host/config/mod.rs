@@ -43,6 +43,8 @@ impl Host {
             }
         }
         let live_changed = self.live.configure(&config.live_translation, force);
+        self.live
+            .configure_speech(&config.speech, &config.live_translation, force);
         if (live_changed || raw_changed) && draft_context {
             self.engine.clear();
             self.reset_session(None, Vec::new());

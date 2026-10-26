@@ -29,6 +29,15 @@ pub struct LiveSession {
 
     pub monitor: LiveMonitor,
 
+    pub speech: Option<qingjian_predict::speech::SpeechCoordinator>,
+
+    pub speech_monitor: LiveMonitor,
+
+    pub(super) speech_applied: Option<(
+        qingjian_predict::speech::SpeechConfig,
+        LiveTranslationConfig,
+    )>,
+
     pub source: String,
 
     pub automatic: qingjian_predict::live::AutomaticSource,
@@ -71,6 +80,9 @@ impl LiveSession {
             context: ContextGuard::default(),
             translator: None,
             monitor: LiveMonitor::new(mtm),
+            speech: None,
+            speech_monitor: LiveMonitor::new(mtm),
+            speech_applied: None,
             source: String::new(),
             automatic: Default::default(),
             request_id: None,
@@ -142,6 +154,7 @@ impl LiveSession {
         if !self.paused && (!self.source.is_empty() || !self.tracker.committed().is_empty()) {
             tracing::info!(target: "live_translation", reason, epoch = self.epoch, "实时翻译停止追踪，保留当前成功译文");
         }
+        self.cancel_speech();
         if let Some(translator) = &mut self.translator {
             translator.cancel();
         }
@@ -173,6 +186,13 @@ impl LiveSession {
     pub fn reset(&mut self, reason: &'static str) {
         if !self.source.is_empty() || !self.tracker.committed().is_empty() {
             tracing::info!(target: "live_translation", reason, epoch = self.epoch, history_units = self.tracker.committed().encode_utf16().count(), "实时翻译会话重置");
+        }
+        if reason == "draft_output_requested" {
+            if let Some(speech) = &mut self.speech {
+                speech.baseline("");
+            }
+        } else {
+            self.cancel_speech();
         }
         self.epoch = self.epoch.wrapping_add(1);
         self.tracker.reset();

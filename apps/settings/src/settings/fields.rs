@@ -22,6 +22,8 @@ impl Settings {
             FieldId::ApiKey => String::new(),
             FieldId::LiveBaseUrl => self.config.live_translation.base_url.clone(),
             FieldId::LiveModel => self.config.live_translation.model.clone(),
+            FieldId::SpeechBaseUrl => self.config.speech.base_url.clone(),
+            FieldId::SpeechVoice => self.config.speech.voice.clone(),
             FieldId::LiveDraftExcludedApps => {
                 self.config.live_translation.draft_excluded_apps.join("\n")
             }
@@ -48,13 +50,20 @@ impl Settings {
             return;
         };
         match id {
-            FieldId::BaseUrl | FieldId::Model | FieldId::LiveBaseUrl | FieldId::LiveModel => {
+            FieldId::BaseUrl
+            | FieldId::Model
+            | FieldId::LiveBaseUrl
+            | FieldId::LiveModel
+            | FieldId::SpeechBaseUrl
+            | FieldId::SpeechVoice => {
                 let (section, current) = match id {
                     FieldId::BaseUrl => ("predict", &self.config.predict.base_url),
                     FieldId::Model => ("predict", &self.config.predict.model),
                     FieldId::LiveBaseUrl => {
                         ("live_translation", &self.config.live_translation.base_url)
                     }
+                    FieldId::SpeechBaseUrl => ("speech", &self.config.speech.base_url),
+                    FieldId::SpeechVoice => ("speech", &self.config.speech.voice),
                     _ => ("live_translation", &self.config.live_translation.model),
                 };
                 if !text.is_empty() && text != *current {
