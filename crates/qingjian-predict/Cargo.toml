@@ -20,3 +20,6 @@ tracing.workspace = true
 reqwest.workspace = true
 uuid.workspace = true
 jiff.workspace = true
+
+[dev-dependencies]
+qingjian-dictionary.workspace = true

@@ -58,6 +58,16 @@ impl App for Settings {
                     self.open_vocabulary();
                 }
             }
+            Message::LiveTranslationShortcuts => {
+                self.update(Message::Page(PageId::Shortcuts));
+                self.menu = None;
+                self.search.clear();
+                let target = view::index(self).into_iter().find(|entry| {
+                    entry.page == PageId::Shortcuts
+                        && entry.title == crate::shortcut::Shortcut::ReplaceLiveTranslation.title()
+                });
+                self.spotlight(target.and_then(|entry| entry.key));
+            }
             Message::SystemCtrlSpace(on) => self.set_ctrl_space(on),
             Message::Record(shortcut) => self.recording = Some(shortcut),
             Message::StopRecording => self.recording = None,

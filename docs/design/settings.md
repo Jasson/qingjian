@@ -114,10 +114,16 @@ macOS 与 Windows 缺省勾选单击 Shift；macOS 同时保留 Caps Lock 状态
 | 标题 | 控件 | 配置 | ⓘ |
 |---|---|---|---|
 | 实时中英互译 | 开关 | `live_translation.enabled` | 已上屏的本句文字与高亮候选一起预译，独立悬浮条显示，保留字词释义 |
+| 翻译草稿模式 | 开关，缺省开，依赖实时翻译主开关 | `live_translation.draft_enabled` | 所有已识别未排除的 macOS 应用先留草稿，确认后输出，不自动发送；私密环境不启用 |
+| 不使用草稿的应用 | 多行文本输入＋保存按钮 | `live_translation.draft_excluded_apps` | 每行一个完整应用标识，精确大小写匹配，无通配符；失焦或按钮保存，允许清空，保存时去重 |
+| 允许用译文替换选中内容 | 开关，缺省关 | `live_translation.allow_replace` | 先取得译文再选中完全对应的原文，手动替换，不重新调用模型；终端仅复制 |
+| 替换快捷键 | 「修改替换快捷键」按钮 | 无新增配置 | 导航到已有快捷键页，并滚动、高亮「用实时译文替换选中内容」录制器 |
 | 本机服务地址 | 单行输入 | `live_translation.base_url` | 只允许本机 Ollama，不使用云服务的地址与密钥 |
 | 本地翻译模型 | 单行输入 | `live_translation.model` | 默认 `maternion/hy-mt2:1.8b`，需先下载 |
 
-输入框按 Enter 保存、Esc 取消。默认关闭，地址 `http://localhost:11434`，防抖 180 ms、超时 5000 ms；后两项仅配置文件提供，不增加常用设置负担。此分节与 `[predict]` 独立，服务不可用不阻塞输入、不回退到云端。翻译固定中英互译，不受字词释义的学习语言影响。
+单行输入框按 Enter 保存、Esc 取消；排除列表的多行框 Enter 换行、按钮或失焦保存。实时翻译主开关默认关闭，地址 `http://localhost:11434`，防抖 180 ms、超时 5000 ms；后两项仅配置文件提供，不增加常用设置负担。快捷键页的本地实时翻译组提供 `shortcut.copy_live_translation` / `shortcut.replace_live_translation` 两个录键器，以及 `shortcut.insert_live_translation` 草稿输出录键器（默认 `control+option+v`），缺省 `control+option+c` / `control+option+r`；录制时 Backspace 保存空串禁用。三项为可选的修饰键加 ASCII 字母组合（配置与录制均拒绝数字或句号，避免抢占译词和删候选的数字键族），避免与云选区翻译、按需联想及另一操作撞键。「恢复默认」同时恢复这些键。替换只使用同会话最近成功译文，要求选区完整文本与其源文完全一致；无选区或不匹配时拒绝，不重新调用模型，不能将整句译文替换一个词。鼠标选区保留该缓存，焦点、应用、配置与私密状态变化清除。
+
+此分节与 `[predict]` 独立，服务不可用不阻塞输入、不回退到云端。翻译固定中英互译，不受字词释义的学习语言影响。
 
 **状态条**（只有 Windows）：悬浮状态条，开关，`status_bar.enabled`。以前放在「候选窗口」页，可它显示和切换的是中 / 英与标点。
 
@@ -293,3 +299,14 @@ Windows 和 Linux 以前没有这一页，这次都有了。
 ## 待定
 
 - macOS 输入法菜单里的「模糊音」子菜单保留：设置里它已经不是单独一页了，菜单里留着反倒是最快的入口。
+
+
+翻译草稿提供 `shortcut.insert_original` / `shortcut.cancel_draft` 两个 `Option<DraftShortcut>` 设置，缺省 `enter` / `escape`，空串禁用。`DraftShortcut` 仅允许无修饰 Enter／Esc 或修饰键加 ASCII 字母，普通 `KeyCombo` 不放宽。设置录制器仅这两项启用 `KeyRecorder::allow_escape(true)`，Esc 交给录制回调，blur 仍取消；原有录制器 Esc 行为保持。动作间及已有译文输出、复制、替换、选区翻译、AI 联想组合冲突时拒绝保存；手改配置由壳用 `draft_shortcuts_conflict` 防止抢占：冲突时停用两个新动作，原有组合键照常。恢复默认会将这两项写回缺省值；本次实现不自动改写用户现有配置。
+
+翻译草稿模式以独立 `TranslationDraft` 能力项登记 macOS 支持、Windows／Linux 待实现；开关与输出快捷键不改变配置键名的单一事实源。自绘动作目标新增 `InsertTranslation`／`InsertOriginal`／`CancelDraft`，与复制组成基础四操作；有当前应用存档时另显示恢复草稿按钮；pending 时只禁用输出译文，保留手动原文兜底与取消。两种输出都经过共享单行控制字符规范化，不直接发送回车；草稿默认开启，但实时翻译主开关仍默认关闭；旧 `terminal_draft` 只作兼容读取，不决定模式。未知应用、排除应用或私密环境不启用，Windows／Linux 保留原行为。
+
+
+草稿仅在进程内存按应用保存，最多16条；切焦点、应用、鼠标位置或系统结束组词时保存已确认文字＋raw按键，不保存未确认高亮候选。当前应用只可显式取回自己的最近一条，当前稿／拼音非空时禁用恢复，不推断可靠输入框身份，不直接输出；恢复后重新翻译。关闭实时翻译、Secure Input／登录环境、退出进程，以及输入方案／英文候选／Shift字母解释等重放规则变化清存档。其他配置变更先保存当前稿；取消当前稿不删除其他已存稿。排除列表在界面可编辑，不以仅TOML文档代替UI。
+
+
+可聚焦草稿窗提供 `shortcut.open_translation_draft: Option<KeyCombo>`，缺省 `control+option+e`，空串禁用；设置页本地实时翻译组提供「打开翻译草稿窗」录制器，支持修饰键加 ASCII 字母，Backspace 禁用、Esc 取消录制。「恢复默认」覆盖此键。录制新开窗键时拒绝与既有动作冲突，既有动作保留优先级；手改冲突由 `open_translation_draft_conflicts()` 仅禁新开窗键，不使原有译文输出或其他动作失效。`FocusedDraftEditor` 支持矩阵为 macOS 支持、Windows／Linux 待实现。窗口为主动打开的微信隔离输入路线，仅需实时翻译主开关，不依赖全应用 `draft_enabled`，不自动接首键；Terminal 不改用此路线。无法证明原输入框时首次输出仅保留草稿并挂起确认，用户返回目标框再按开窗键确认填入；编辑使待确认输出失效，需重新发起输出，无法确认可复制兜底。旧微信原位输入残留根因未解决，新窗口需真机验收。

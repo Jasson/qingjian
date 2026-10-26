@@ -4,7 +4,7 @@ use crate::candidates::frame::Frame;
 use crate::candidates::preedit::{Preedit, PreeditStyle};
 use crate::candidates::row::{Row, Tone};
 
-pub(super) fn frame(frame: &Frame) -> qingjian_render::Frame {
+pub(crate) fn frame(frame: &Frame) -> qingjian_render::Frame {
     qingjian_render::Frame {
         preedit: frame.preedit.as_ref().map(preedit),
         rows: frame.rows.iter().map(row).collect(),
@@ -15,6 +15,7 @@ pub(super) fn frame(frame: &Frame) -> qingjian_render::Frame {
         sentence: frame.sentence.clone(),
         status: frame.status.clone(),
         mode: frame.mode.clone(),
+        actions: frame.actions.clone(),
     }
 }
 

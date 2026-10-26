@@ -211,6 +211,10 @@ fn every_key_the_settings_app_writes_is_read_by_the_ime() {
         (FieldId::ApiKey, "sk-test"),
         (FieldId::LiveBaseUrl, "http://127.0.0.1:11434"),
         (FieldId::LiveModel, "test-local-model"),
+        (
+            FieldId::LiveDraftExcludedApps,
+            "com.apple.Terminal\ncom.example.Editor",
+        ),
     ] {
         harness.apply(vec![
             Message::Edit(id, Edit::Text(TextInput::Insert(text.to_owned()))),
@@ -246,4 +250,246 @@ fn every_key_the_settings_app_writes_is_read_by_the_ime() {
         harness.checked.len(),
         harness.checked.keys()
     );
+}
+
+#[test]
+fn production_draft_recorder_saves_escape_instead_of_cancelling_or_quitting() {
+    if !crate::support::Feature::TranslationDraft.here() {
+        return;
+    }
+    let dir = std::env::temp_dir().join(format!("qingjian-draft-escape-{}", std::process::id()));
+    let path = dir.join("config.toml");
+    Config::set_value(&path, "shortcut", "cancel_draft", "control+option+x").unwrap();
+    let mut settings = Settings::load(path.clone()).unwrap();
+    settings.page = PageId::Shortcuts;
+    let mut text = TextPainter::new(FontLibrary::system("zh-CN").unwrap());
+    settings.setup(&mut text);
+    let mut harness = Harness {
+        settings,
+        interaction: Interaction::new(),
+        text,
+        path: path.clone(),
+        problems: BTreeMap::new(),
+        checked: BTreeMap::new(),
+    };
+    harness.frame();
+    for message in harness.click(bamboo_slip::Key::ROOT.child(("recorder", Shortcut::CancelDraft)))
+    {
+        harness.settings.update(message);
+    }
+    assert_eq!(harness.settings.recording, Some(Shortcut::CancelDraft));
+    harness.frame();
+    let messages = harness
+        .interaction
+        .handle(&Event::Key(KeyPress::new(
+            KeyCode::Escape,
+            Modifiers::default(),
+        )))
+        .messages;
+    assert!(messages.iter().any(|message| matches!(message, Message::Recorded(Shortcut::CancelDraft, press) if press.key == KeyCode::Escape)));
+    assert!(
+        !messages
+            .iter()
+            .any(|message| matches!(message, Message::Quit | Message::StopRecording))
+    );
+    for message in messages {
+        harness.settings.update(message);
+    }
+    assert_eq!(
+        Config::load(&path).unwrap().shortcut.cancel_draft,
+        Some(qingjian_platform::DraftShortcut::Escape)
+    );
+    assert_eq!(harness.settings.recording, None);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn draft_exclusion_editor_saves_deduplicates_cancels_and_clears_real_array() {
+    if !crate::support::Feature::TranslationDraft.here() {
+        return;
+    }
+    let dir =
+        std::env::temp_dir().join(format!("qingjian-draft-exclusions-{}", std::process::id()));
+    let path = dir.join("config.toml");
+    let mut settings = Settings::load(path.clone()).unwrap();
+    settings.page = PageId::Language;
+    let mut text = TextPainter::new(FontLibrary::system("zh-CN").unwrap());
+    settings.setup(&mut text);
+    let mut harness = Harness {
+        settings,
+        interaction: Interaction::new(),
+        text,
+        path: path.clone(),
+        problems: BTreeMap::new(),
+        checked: BTreeMap::new(),
+    };
+    let id = FieldId::LiveDraftExcludedApps;
+    assert!(harness.settings.fields[&id].is_multiline());
+    for (typed, expected) in [
+        (
+            "com.apple.Terminal\ncom.apple.Safari\ncom.apple.Terminal\n",
+            vec!["com.apple.Terminal", "com.apple.Safari"],
+        ),
+        ("", Vec::new()),
+    ] {
+        harness.apply(vec![
+            Message::Edit(
+                id,
+                Edit::Key(KeyPress::new(
+                    KeyCode::Character("a".to_owned()),
+                    Modifiers {
+                        command: true,
+                        ..Modifiers::default()
+                    },
+                )),
+            ),
+            Message::Edit(id, Edit::Text(TextInput::Insert(typed.to_owned()))),
+        ]);
+        harness.frame();
+        let messages = harness.click(bamboo_slip::Key::ROOT.child("save-draft-excluded-apps"));
+        assert!(
+            messages
+                .iter()
+                .any(|message| matches!(message, Message::Commit(FieldId::LiveDraftExcludedApps)))
+        );
+        harness.apply(messages);
+        assert_eq!(
+            Config::load(&path)
+                .unwrap()
+                .live_translation
+                .draft_excluded_apps,
+            expected
+        );
+    }
+    harness.apply(vec![
+        Message::Edit(
+            id,
+            Edit::Text(TextInput::Insert("com.invalid.*".to_owned())),
+        ),
+        Message::Commit(id),
+    ]);
+    assert!(
+        Config::load(&path)
+            .unwrap()
+            .live_translation
+            .draft_excluded_apps
+            .is_empty()
+    );
+    assert!(harness.settings.notice.is_some());
+    harness.settings.update(Message::Cancel(id));
+    assert_eq!(harness.settings.fields[&id].text(), "");
+    assert!(harness.settings.fields[&id].is_multiline());
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn focused_editor_recorder_saves_disables_and_resets_without_changing_output() {
+    draft_recorder_roundtrip(
+        Shortcut::OpenTranslationDraft,
+        crate::support::Feature::FocusedDraftEditor,
+    );
+}
+
+#[test]
+fn paste_draft_recorder_saves_disables_and_resets_without_changing_output() {
+    draft_recorder_roundtrip(
+        Shortcut::PasteDraft,
+        crate::support::Feature::TranslationDraft,
+    );
+}
+
+fn draft_recorder_roundtrip(action: Shortcut, feature: crate::support::Feature) {
+    if !feature.here() {
+        return;
+    }
+    let dir = std::env::temp_dir().join(format!(
+        "qingjian-draft-recorder-{}-{}",
+        action.config_key().1,
+        std::process::id()
+    ));
+    let path = dir.join("config.toml");
+    Config::set_value(
+        &path,
+        "shortcut",
+        "insert_live_translation",
+        "command+shift+y",
+    )
+    .unwrap();
+    let mut settings = Settings::load(path.clone()).unwrap();
+    settings.page = PageId::Shortcuts;
+    let mut text = TextPainter::new(FontLibrary::system("zh-CN").unwrap());
+    settings.setup(&mut text);
+    let mut harness = Harness {
+        settings,
+        interaction: Interaction::new(),
+        text,
+        path: path.clone(),
+        problems: BTreeMap::new(),
+        checked: BTreeMap::new(),
+    };
+    for press in [
+        KeyPress::new(
+            KeyCode::Character("x".to_owned()),
+            Modifiers {
+                control: true,
+                alt: true,
+                ..Modifiers::default()
+            },
+        ),
+        KeyPress::new(KeyCode::Backspace, Modifiers::default()),
+    ] {
+        harness.frame();
+        for message in harness.click(bamboo_slip::Key::ROOT.child(("recorder", action))) {
+            harness.settings.update(message);
+        }
+        assert_eq!(harness.settings.recording, Some(action));
+        harness.frame();
+        let messages = harness
+            .interaction
+            .handle(&Event::Key(press.clone()))
+            .messages;
+        assert!(messages.iter().any(|message| matches!(
+            message,
+            Message::Recorded(recorded, _) if *recorded == action
+        )));
+        for message in messages {
+            harness.settings.update(message);
+        }
+        let loaded = Config::load(&path).unwrap();
+        assert_eq!(
+            if action == Shortcut::PasteDraft {
+                loaded.shortcut.paste_draft
+            } else {
+                loaded.shortcut.open_translation_draft
+            },
+            if press.key == KeyCode::Backspace {
+                None
+            } else {
+                Some("control+option+x".parse().unwrap())
+            }
+        );
+        assert_eq!(
+            loaded.shortcut.insert_live_translation,
+            Some("command+shift+y".parse().unwrap())
+        );
+    }
+    harness.settings.update(Message::ResetShortcuts);
+    let reset = Config::load(&path).unwrap().shortcut;
+    assert_eq!(
+        if action == Shortcut::PasteDraft {
+            reset.paste_draft
+        } else {
+            reset.open_translation_draft
+        },
+        Some(
+            if action == Shortcut::PasteDraft {
+                "command+v"
+            } else {
+                "control+option+e"
+            }
+            .parse()
+            .unwrap()
+        )
+    );
+    std::fs::remove_dir_all(dir).unwrap();
 }

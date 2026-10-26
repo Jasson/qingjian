@@ -27,6 +27,9 @@ pub enum MenuAction {
 
     /// 在光标处打开符号面板（控制器处理，要当前会话的文本客户端）。
     OpenSymbolPanel,
+
+    /// 只恢复当前应用存档到输入法，不向应用填入文字。
+    RestoreCurrentDraft,
 }
 
 impl MenuAction {
@@ -38,6 +41,7 @@ impl MenuAction {
             Self::OpenDownload => 4,
             Self::OpenSettings => 5,
             Self::OpenSymbolPanel => 6,
+            Self::RestoreCurrentDraft => 7,
             Self::ToggleFuzzy(index) => FUZZY_TAG_BASE + index as NSInteger,
         }
     }
@@ -50,6 +54,7 @@ impl MenuAction {
             4 => Self::OpenDownload,
             5 => Self::OpenSettings,
             6 => Self::OpenSymbolPanel,
+            7 => Self::RestoreCurrentDraft,
             _ => {
                 let index = usize::try_from(tag.checked_sub(FUZZY_TAG_BASE)?).ok()?;
                 (index < FuzzyRules::NAMES.len()).then_some(Self::ToggleFuzzy(index))?
@@ -71,6 +76,7 @@ mod tests {
             MenuAction::OpenLogs,
             MenuAction::OpenDownload,
             MenuAction::OpenSymbolPanel,
+            MenuAction::RestoreCurrentDraft,
             MenuAction::ToggleFuzzy(0),
             MenuAction::ToggleFuzzy(FuzzyRules::NAMES.len() - 1),
         ];

@@ -9,7 +9,11 @@ impl QingjianInputController {
     /// 不在组句中时不管；候选没有译文就吞掉按键不动，免得 ¡™£ 进应用。
     /// 翻译应用里选中的文字：云服务关着、密码框、没有选区都不动（键交回应用）。
     pub(super) fn translate_selection(&self, client: TextClient<'_>) -> bool {
-        host::with(|h| h.reset_live_translation());
+        if client.stages_output() {
+            host::with(|h| h.live_action_notice("草稿模式请使用输出译文按钮"));
+            return true;
+        }
+        host::with(|h| h.reset_live_translation("selection_translation"));
         if !host::with(|h| h.engine.prediction_enabled()).unwrap_or(false) {
             tracing::info!("云服务没开，翻译快捷键不生效");
             return false;
@@ -90,6 +94,9 @@ impl QingjianInputController {
         sense: usize,
         client: TextClient<'_>,
     ) -> bool {
+        if crate::imk::editor::session_owned() {
+            return true;
+        }
         let composing = host::with(|h| !h.engine.composition().is_empty()).unwrap_or(false);
         if !composing {
             return false;
@@ -101,8 +108,7 @@ impl QingjianInputController {
         match text {
             Some(text) => {
                 tracing::debug!(%text, "commit translation");
-                host::with(|h| h.commit_live_text(&text));
-                client.insert_text(&text);
+                client.commit_text(&text);
                 self.refresh(client);
             }
             None => tracing::debug!(?index, sense, "这个候选没有这条译文"),

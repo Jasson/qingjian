@@ -311,3 +311,239 @@ fn local_live_translation_is_independent_of_cloud_settings() {
         config
     );
 }
+
+#[test]
+fn live_translation_actions_default_and_disable_independently() {
+    let default = Config::default();
+    assert!(!default.live_translation.allow_replace);
+    assert_eq!(
+        default.shortcut.copy_live_translation.unwrap().key_string(),
+        "control+option+c"
+    );
+    assert_eq!(
+        default
+            .shortcut
+            .replace_live_translation
+            .unwrap()
+            .key_string(),
+        "control+option+r"
+    );
+    let enabled: Config = toml::from_str("[live_translation]\nallow_replace = true\n[shortcut]\ncopy_live_translation = ''\nreplace_live_translation = 'control+shift+x'\n").unwrap();
+    assert!(enabled.live_translation.allow_replace);
+    assert_eq!(enabled.shortcut.copy_live_translation, None);
+    assert_eq!(enabled.shortcut.replace_live_translation.unwrap().key, 'x');
+    assert_eq!(
+        toml::from_str::<Config>(&toml::to_string(&enabled).unwrap()).unwrap(),
+        enabled
+    );
+}
+
+#[test]
+fn live_shortcuts_reject_digit_and_period_combinations() {
+    for key in [
+        "copy_live_translation",
+        "replace_live_translation",
+        "insert_live_translation",
+        "open_translation_draft",
+    ] {
+        for value in ["option+1", "control+9", "control+option+."] {
+            assert!(toml::from_str::<Config>(&format!("[shortcut]\n{key} = '{value}'\n")).is_err());
+        }
+    }
+}
+
+#[test]
+fn terminal_draft_defaults_off_and_insertion_shortcut_round_trips() {
+    let default = Config::default();
+    assert!(!default.live_translation.terminal_draft);
+    assert_eq!(
+        default
+            .shortcut
+            .insert_live_translation
+            .unwrap()
+            .key_string(),
+        "control+option+v"
+    );
+    let custom: Config = toml::from_str(
+        "[live_translation]\nterminal_draft = true\n[shortcut]\ninsert_live_translation = ''\n",
+    )
+    .unwrap();
+    assert!(custom.live_translation.terminal_draft);
+    assert!(!custom.live_translation.enabled);
+    assert_eq!(custom.shortcut.insert_live_translation, None);
+    assert_eq!(
+        toml::from_str::<Config>(&toml::to_string(&custom).unwrap()).unwrap(),
+        custom
+    );
+}
+
+#[test]
+fn application_draft_defaults_on_and_legacy_flag_does_not_control_it() {
+    let defaults: Config = toml::from_str("").unwrap();
+    assert!(defaults.live_translation.draft_enabled);
+    assert!(defaults.live_translation.draft_excluded_apps.is_empty());
+    assert!(!defaults.live_translation.draft_allowed_in(Some("browser")));
+    let legacy: Config =
+        toml::from_str("[live_translation]\nenabled = true\nterminal_draft = false\n").unwrap();
+    assert!(legacy.live_translation.draft_enabled);
+    assert!(legacy.live_translation.draft_allowed_in(Some("browser")));
+    assert!(!legacy.live_translation.draft_allowed_in(None));
+    assert!(!legacy.live_translation.draft_allowed_in(Some("")));
+    assert!(!legacy.live_translation.draft_allowed_in(Some(" \t")));
+}
+
+#[test]
+fn application_draft_can_be_disabled_or_excluded_and_round_trips() {
+    let mut config: Config = toml::from_str("[live_translation]\nenabled = true\ndraft_enabled = true\ndraft_excluded_apps = ['browser', 'terminal']\n").unwrap();
+    assert!(!config.live_translation.draft_allowed_in(Some("browser")));
+    assert!(!config.live_translation.draft_allowed_in(Some("terminal")));
+    assert!(config.live_translation.draft_allowed_in(Some("editor")));
+    assert_eq!(
+        toml::from_str::<Config>(&toml::to_string(&config).unwrap()).unwrap(),
+        config
+    );
+    config.live_translation.draft_enabled = false;
+    assert!(!config.live_translation.draft_allowed_in(Some("editor")));
+    config.live_translation.draft_enabled = true;
+    config.live_translation.enabled = false;
+    assert!(!config.live_translation.draft_allowed_in(Some("editor")));
+}
+
+#[test]
+fn draft_shortcuts_default_aliases_disable_and_conflicts() {
+    use crate::DraftShortcut;
+    let old: Config = toml::from_str("[general]\npage_size = 5").unwrap();
+    assert_eq!(old.shortcut.insert_original, Some(DraftShortcut::Enter));
+    assert_eq!(old.shortcut.cancel_draft, Some(DraftShortcut::Escape));
+    for alias in ["enter", "return", "numpadenter", "numpad_enter", "ENTER"] {
+        assert_eq!(
+            alias.parse::<DraftShortcut>().unwrap(),
+            DraftShortcut::Enter
+        );
+    }
+    assert_eq!(
+        "esc".parse::<DraftShortcut>().unwrap().key_string(),
+        "escape"
+    );
+    for invalid in [
+        "a",
+        "space",
+        "backspace",
+        "option+1",
+        "control+.",
+        "shift+enter",
+    ] {
+        assert!(invalid.parse::<DraftShortcut>().is_err());
+    }
+    assert!("enter".parse::<KeyCombo>().is_err());
+    let disabled: Config =
+        toml::from_str("[shortcut]\ninsert_original = ''\ncancel_draft = ''").unwrap();
+    assert_eq!(disabled.shortcut.insert_original, None);
+    assert_eq!(disabled.shortcut.cancel_draft, None);
+    let serialized = toml::to_string(&disabled).unwrap();
+    assert!(serialized.contains("insert_original = \"\""));
+    assert_eq!(toml::from_str::<Config>(&serialized).unwrap(), disabled);
+    for config in [
+        "insert_original = 'escape'",
+        "cancel_draft = 'enter'",
+        "insert_original = 'control+option+v'",
+        "cancel_draft = 'control+option+c'",
+        "insert_original = 'control+option+r'",
+        "cancel_draft = 'control+option+t'",
+        "insert_original = 'control+option+j'",
+    ] {
+        assert!(
+            toml::from_str::<Config>(&format!("[shortcut]\n{config}"))
+                .unwrap()
+                .shortcut
+                .draft_shortcuts_conflict()
+        );
+    }
+    assert!(!old.shortcut.draft_shortcuts_conflict());
+}
+
+#[test]
+fn focused_draft_shortcut_defaults_customizes_disables_and_round_trips() {
+    let old: Config = toml::from_str("[general]\npage_size = 5").unwrap();
+    assert_eq!(
+        old.shortcut.open_translation_draft.unwrap().key_string(),
+        "control+option+e"
+    );
+    assert!(!old.shortcut.open_translation_draft_conflicts());
+    assert!(!old.live_translation.enabled);
+    let customized: Config =
+        toml::from_str("[shortcut]\nopen_translation_draft = 'CTRL+SHIFT+K'").unwrap();
+    assert_eq!(
+        customized
+            .shortcut
+            .open_translation_draft
+            .unwrap()
+            .key_string(),
+        "control+shift+k"
+    );
+    assert_eq!(
+        toml::from_str::<Config>(&toml::to_string(&customized).unwrap()).unwrap(),
+        customized
+    );
+    let disabled: Config = toml::from_str("[shortcut]\nopen_translation_draft = ''").unwrap();
+    assert_eq!(disabled.shortcut.open_translation_draft, None);
+    assert!(!disabled.shortcut.open_translation_draft_conflicts());
+    assert!(
+        toml::to_string(&disabled)
+            .unwrap()
+            .contains("open_translation_draft = \"\"")
+    );
+}
+
+#[test]
+fn focused_draft_conflicts_disable_only_the_new_entry_and_preserve_existing_actions() {
+    for field in [
+        "copy_live_translation",
+        "replace_live_translation",
+        "insert_live_translation",
+        "translate_selection",
+        "predict",
+        "insert_original",
+        "cancel_draft",
+    ] {
+        let config: Config =
+            toml::from_str(&format!("[shortcut]\n{field} = 'control+option+e'")).unwrap();
+        assert!(
+            config.shortcut.open_translation_draft_conflicts(),
+            "{field}"
+        );
+        assert!(
+            !config.shortcut.draft_shortcuts_conflict(),
+            "existing action should keep priority: {field}"
+        );
+    }
+    let config: Config = toml::from_str("[shortcut]\ninsert_live_translation = 'command+shift+y'\nopen_translation_draft = 'command+shift+y'").unwrap();
+    assert!(config.shortcut.open_translation_draft_conflicts());
+    assert!(!config.shortcut.draft_shortcuts_conflict());
+    assert_eq!(
+        config.shortcut.insert_live_translation.unwrap(),
+        "command+shift+y".parse::<KeyCombo>().unwrap()
+    );
+}
+
+#[test]
+fn focused_draft_conflict_guard_rejects_invalid_programmatic_keys_and_normalizes_case() {
+    let mut config = ShortcutConfig::default();
+    for key in ['1', '.', '汉'] {
+        config.open_translation_draft = Some(KeyCombo {
+            key,
+            ..KeyCombo::TRANSLATE_DEFAULT
+        });
+        assert!(config.open_translation_draft_conflicts());
+    }
+    config.open_translation_draft = Some(KeyCombo {
+        key: 'e',
+        modifiers: Modifiers::default(),
+    });
+    assert!(config.open_translation_draft_conflicts());
+    config.open_translation_draft = Some(KeyCombo {
+        key: 'C',
+        ..KeyCombo::TRANSLATE_DEFAULT
+    });
+    assert!(config.open_translation_draft_conflicts());
+}

@@ -3,7 +3,7 @@
 //! 与自绘 NSView 的旧路径并存：配置 `[general] renderer = "system"` 走旧路（过渡期退路）。
 //! 阴影由主题定义、渲染器画进位图（位图四周留边），面板关掉系统阴影，与 Windows 一致。
 
-mod convert;
+pub(super) mod convert;
 mod font_files;
 
 pub(crate) use font_files::{available_families, family_files};

@@ -25,6 +25,9 @@ pub struct InputMenu {
     /// 「有新版本 x.y.z…」，点了打开下载页；没有新版时隐藏。
     update: Retained<NSMenuItem>,
 
+    /// 当前应用存档的显式恢复入口；无可恢复内容时禁用。
+    restore_draft: Retained<NSMenuItem>,
+
     /// 所有条目的 target，要和菜单活得一样久。
     _target: Retained<MenuTarget>,
 }
@@ -66,6 +69,14 @@ impl InputMenu {
             Some(MenuAction::OpenSymbolPanel),
             &target,
         ));
+        let restore_draft = action_item(
+            mtm,
+            "恢复当前应用草稿",
+            Some(MenuAction::RestoreCurrentDraft),
+            &target,
+        );
+        restore_draft.setEnabled(false);
+        menu.addItem(&restore_draft);
         menu.addItem(&action_item(
             mtm,
             "设置…",
@@ -104,8 +115,13 @@ impl InputMenu {
             fuzzy,
             error,
             update,
+            restore_draft,
             _target: target,
         }
+    }
+
+    pub fn sync_restore(&self, enabled: bool) {
+        self.restore_draft.setEnabled(enabled);
     }
 
     /// 查到新版本就露出「有新版本」那一行，没有就藏起来。

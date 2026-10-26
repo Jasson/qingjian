@@ -114,7 +114,18 @@ CandidateLayout 保持 `set_cloud` 的首页末尾布局与本地首项；`set_c
 
 ## crates/qingjian-predict
 
-`live` 提供独立的本地实时中英翻译，配置类型 `LiveTranslationConfig` 对应 `[live_translation]`：默认关闭，Ollama 原生接口地址 `http://localhost:11434`、模型 `maternion/hy-mt2:1.8b`、防抖 180 ms、超时 5000 ms。使用 Ollama 原生纯文本翻译请求，不复用要求 JSON 结果的云联想提示词或同步字词 `Translator`。本地请求与 `[predict]` 的模型、密钥、开关独立，无云端回退；源文、当前候选与断句状态由平台无关代码管理，壳只提交输入事件、轮询结果与显示独立悬浮条。新输入取消旧任务，结果按会话与版本匹配后展示。
+`live` 提供独立的本地实时中英翻译，配置类型 `LiveTranslationConfig` 对应 `[live_translation]`：默认关闭，Ollama 原生接口地址 `http://localhost:11434`、模型 `maternion/hy-mt2:1.8b`、防抖 180 ms、超时 5000 ms。使用 Ollama 原生纯文本翻译请求，不复用要求 JSON 结果的云联想提示词或同步字词 `Translator`。本地请求与 `[predict]` 的模型、密钥、开关独立，无云端回退；源文、当前候选与断句状态由平台无关代码管理，壳只提交输入事件、轮询结果与显示独立悬浮条。新输入取消旧任务，结果按会话与版本匹配后展示。`allow_replace` 默认 false，仅允许用户选中与已有成功译文源文完全一致的文字后手动替换，不重新发翻译请求；复制不受该开关限制。`draft_enabled` 默认 true，仅与主开关 `enabled`（默认false）同时开启时使用输入法内草稿；`draft_excluded_apps` 默认空，按完整应用标识精确匹配、区分大小写、不支持通配符。`terminal_draft` 仅保留旧配置读取，不参与策略。设置程序提供多行应用排除编辑、保存／失焦写入真正数组，清空、去重与取消编辑可用。`[shortcut] copy_live_translation` / `replace_live_translation` / `insert_live_translation` 是 `Option<KeyCombo>`（空串禁用），缺省 `control+option+c` / `control+option+r` / `control+option+v`；设置录键器支持 Backspace 禁用、动作键冲突检查与恢复默认。
+通用翻译草稿的普通退格使用当前目标应用进程专属的 `CGEventTapCreateForPid` active 入口，仅已识别且未排除的前台应用、当前青简 controller、live／draft_enabled 开启且内部 draft／composition 非空、非 Secure Input 时接管 keycode 51；Command／Option／Control 组合与 Fn forward-delete 不进入此路径，非目标事件透传，不读取按键文本或模拟按键。删空后当前按住周期仍隔离至 key-up，松开后下一次空态普通退格透传；失焦、配置变化、私密状态等边界清队列并退出接管。键盘监听预检不能证明 active filter 有权限，实际 Create 失败作为不可用证据，浮窗提示检查辅助功能／输入监控并重新激活重试；生产不自动弹权限框或打开设置。timeout／user-disabled 停止接管并保留草稿，提示重新激活，不盲目 enable 或频繁重建。既有 Carbon 输出热键及用户 `shift+command+y` 配置不变。单元回放或 tap 创建成功只验证各自环节，不能作为普通退格真机端到端修复的证据。
+
+翻译草稿的普通 keycode 51 在上下文采样前走独立退格入口：核验当前控制器、客户端应用和 observation 后，恢复内部编辑状态，先删 Engine 拼音，再删已确认草稿；不受普通连续追踪的 paused 门禁影响。候选窗口强制保留拼音行，翻译浮窗显示光标附近的待选按键，元数据诊断不记录输入正文。
+自动翻译空态资格集中在 predict 的 `live::automatic_input`：`starts_automatic_source` 接受字母／汉字并排除 emoji 字形；`AutomaticSource` 保存当前稿件是否已启动，已有稿件删到纯数字或空白仍可见，删空／reset 后清资格，显式恢复及 Core 符号选择可重建。普通非草稿输入用 `observe_sentence` 对接现有 `SentenceTracker.source_with_start`，换句后重新判资格，纯数字／标点／emoji 不送翻译；不改断句规则或宿主普通输入方式。独立手动 editor 不使用此自动首键策略。
+
+macOS 自动草稿在已配置快捷键之后、上下文采样／标点转换／提交正文之前，用 `DraftKeyRoute::pass_empty_input` 核验 source 与 composition 为空、无翻译审阅／符号占用及无 Core `?` 问字前缀入口；纯数字、标点、空格与 emoji 原样透传，并由同一生产方法将路由写为 `PassApplication`，外层 `consume_fallback` 不得吞回。已有稿件、表达式／问字／符号面板沿用 Core 路线，显式选符号不会被自动首键门禁丢弃。自动条只以资格与实际 source／draft／composition 显示，开窗／恢复能力和残留 notice 不独立撑开。
+
+原生菜单「恢复当前应用草稿」复用现有按应用 archive，不新增设置或快捷键。IMK 菜单与状态项菜单都转到独立 controller 入口：先在 Host 内只核验资格，释放借用后才取客户端并调用原有恢复核验；owner／current／secure／应用与 observation 在 IPC 后复查。菜单置于既有可点击动作组，能力在输入会话菜单读取、状态项轮询及翻译展示时刷新，空态无需浮窗承载恢复入口。
+退格入口取证独立放在 `handleEvent` 的 event/client 匹配之前，诊断异常只丢弃该条记录、不 recover 或更改返回值。翻译草稿激活时按 controller arm 并递增诊断 session；每次新增入口诊断总预算 16（arm 1、普通聚合心跳 1、nil 两类各 1、删除类别最多 12），无时间截止，每类删除间隔至少一秒，已记录后的 autorepeat 不再耗预算。nil／staged=false／Host 不可用不阻断选中记录，普通键不输出键码、flags、字符或逐键时间序列；单一 BS／DEL 仅固定类别。日志只取缓存 Host 状态，不做客户端应用 IPC，不改变既有订阅、删除逻辑或系统热键。配置热开后需重新激活开始诊断；旧 controller 的迟到回调不消耗新会话预算。
+
+`live::context::{ContextSnapshot, ContextGuard}` 按平台提供的 `ContextPolicy` 处理宿主证据；以下完整／局部／不可读判定用于常规宿主：范围与实际返回长度均为 UTF-16 单元，只有受控历史读回匹配（或覆盖 4096 单元的完整有限回看窗口）才能从低信任建立 `Full`；足长但不匹配的未知片段仍为 `Partial`。活动 marked 原点空片段、短窗口与不可读返回不否定受控历史，也不沿用此前的完整能力。只有连续 `Full`、无 `active_marked` 且真实空范围读取成功时，空前文才触发清空。此判断是能力推断：若宿主完整伪装为可读空文档，接口证据无法绝对区分，需结合重置原因日志诊断。显式焦点、鼠标、导航、非 marked 选区与已知应用切换仍清空；代理对象地址变化及暂时缺失应用标识不代表换焦点。重置会同时清除 Guard 能力状态。
 
 API 用量由 ChatClient 的单次发送入口计入：每次 HTTP 尝试分别累计，关思考参数兼容重试计两次；SDK 隐式重试关闭。CloudPredictor、CloudGlossFiller、ConnectionTest 的 `*_with_usage` 接口可指定共享统计文件，旧构造入口保持无统计行为。`api-usage.json` 只保存计数，文件锁合并跨线程／进程更新，原子写入；损坏文件保留并报告错误。缺失 usage 记未知，不估算 Token。
 每个有结果的请求还在同一把锁里往旁边的 `api-usage-hourly.tsv` 追加一行（日期、时、请求、失败、输入、输出、合计），超过 256 KB 整理成一个时段一行，统计页画按天、按小时的图用（`ApiUsageHours`）。
@@ -293,10 +304,53 @@ Windows Server 自绘候选窗（GDI）按 `Frame.columns` / `column_ems` 画矩
 
 IMK 输入法，源码按 `app / host / imk / candidates / menubar / preferences` 分目录。
 
+普通非草稿翻译条可见且无组词时，无修饰 `Esc` 在命令分发中调用 `reset_live_translation("escape")`，清除缓存、递增 epoch、取消 translator 并隐藏窗口；晚到结果同时受 worker 修订号和 Host request_id 拦截。没有翻译条时不消费按键，草稿、候选、符号面板与选区翻译保留原优先级；修饰键加 Esc 不触发此清空动作。
+
 - 中英模式独立保存在 `imk::modifiers` 的主线程进程级状态，由输入处理、菜单栏和候选帧共用，不再直接把 Caps Lock 状态当当前模式。
   `[shortcut] switch_mode` 缺省 `shift`，支持多选 `shift` / `control` / `ctrl+alt+space`；IMK 显式接收修饰键变化，以公共修饰位判定按下、设备低位仅作辅助；单击修饰键在松开时判定，期间其他按键或失焦均取消，组合键不触发切换。诊断日志记录事件键码、修饰位与切换状态，不记录输入文本。
   Caps Lock 状态变化仍显式同步中英，之后 Shift 可再次切换；指示灯仅表示硬件状态。英文模式下仅在 Caps Lock 亮着时根据 Shift 修正系统送来的大小写，保持默认小写、Shift 大写。
   切换时将组句原样上屏并清理候选与云联想；`[general] english_mode = false` 固定中文，与 `english_candidates` 仅关闭英文候选的含义不同。
+
+通用翻译草稿由 `live_translation.draft_enabled` 控制，默认开启但依赖默认关闭的主开关；所有已知非排除、非 loginwindow／secure 应用生效。`TerminalDraft` 类型名留作兼容实现名，不再表示仅限 Terminal；单行输出规范化仍共享，CR／LF 为空格，其他 C0／DEL 拒绝。浮窗显示原文与译文，输出译文必须匹配最新整段且无待选按键；输出原文使用 confirmed＋raw，不采用高亮／不展开双拼，Enter默认输出原文但不发送Enter；输出清空后下一独立Enter交宿主。Esc默认一次取消整稿，可配置bare Enter/Escape或modifiedASCIIletter，空串禁用，`draft_shortcuts_conflict`真时两个新动作停用，旧动作不变。`KeyRecorder::allow_escape`仅两新项开启，Esc可录、blur取消；键盘入口仍受native接管门禁，按钮兜底。
+
+微信独立草稿窗另有 `shortcut.open_translation_draft: Option<KeyCombo>`，缺省 `control+option+e`、空串禁用，录制器仅接受修饰键加 ASCII 字母。`open_translation_draft_conflicts()` 将开窗键与已有翻译／联想／草稿动作比较，冲突仅停用新开窗入口，原有 `insert_live_translation`（包含用户 `command+shift+y`）不改写、不失效。设置程序通过 `FocusedDraftEditor` 统一登记 macOS 支持、Windows／Linux 待实现；恢复默认覆盖新键，离屏生产控件测试覆盖录制保存、禁用、重置和保留现有译文输出配置。开窗为显式按钮／快捷键动作，仅要求实时翻译开启，不依赖全应用 `draft_enabled`；不自动接首键，Terminal 保持旧路线。独立编辑会话失焦保留，不串通用 archive。首次输出不能证明原输入框时保留稿并进入待确认状态，用户回目标框再按开窗键确认填入；任何编辑使待确认内容失效，需重新发起输出，目标仍不可确认时允许复制兜底，不自动发送。当前用户已验证：微信加入 `draft_excluded_apps` 且 `general.preedit=both` 时，普通选字上屏正常；`preedit=window` 仍有原始字母残留。独立窗口属于新隔离路线，其实际自动激活／获焦尚未通过验证；标准 NSWindow 正控制在同一自动化环境也未获焦，不能以类型检查或窗口截图宣称微信端到端修复。
+
+macOS 通用草稿仅以可配置快捷键接入粘贴，不增加浮窗按钮。`controller::draft_paste` 在 Host 借用之外读取 `NSPasteboardTypeString`，读前后核验 controller／前台应用／Secure Input，并比对 ObservationToken、快照输出门禁与草稿模式；有组词或空剪贴板拒绝。文本经 `normalize_terminal_output` 原子校验后直接 `TerminalDraft::commit`，不经过 Engine 按键解释；换行转空格，其余控制字符拒绝，随后恢复 automatic 资格、重新提交翻译，Host 发布新凭据撤销旧排队输出。已有草稿时以 `shortcut.paste_draft`（缺省 `command+v`，空串禁用）接入粘贴入口，空态保留宿主粘贴；待选拼音先提示完成选字，异常不透传到宿主。该动作通过现有键盘接管、会话与安全门禁进入，不创建新窗口。设置页在 `TranslationDraft` 支持表下登记「粘贴到草稿」（macOS 支持、Windows／Linux 随翻译草稿模式待实现），复用字母组合录制与禁用、恢复默认；冲突配置由 `paste_draft_conflicts()` 拒绝，原有输出快捷键不改写。
+
+独立窗的工作流控制权由主线程 `editor::owner::Owner` 的 `Idle / Opening(pid) / Visible(pid) / Pending(pid)` 保存，与瞬时 `KEYBOARD_OWNED` 分开。开窗在客户端同步 IPC 前进入 Opening，IMK 事件在客户端准备前经过统一门禁；持有控制权时旧候选窗、旧翻译条、Carbon 与退格 tap 不得重新启用。获焦成功才挂起普通 Host 草稿，开窗失败恢复原控制权和原有显示，不消费旧输入。失焦隐藏独立窗；无待确认时释放控制权并保留 Runtime，有待确认时仍拦截旧输出组合，普通宿主文字输入撤销 pending 后恢复普通路线。跨应用先隐藏、清待确认，再释放控制权，独立会话保留，Terminal 的旧路径可继续；重新开窗后需重新确认输出。`Owner::legacy_route` 用于真实 IMK 客户端准备回调，测试复用该入口与真实 Engine 会话回放；原生面板／真实应用的输入验证另行执行，不能以门禁测试代替。
+
+每次 Owner 写入递增 `generation()`，开窗等待和 `OpeningGuard::new()` 捕获本轮票据；同 PID 再次开窗也属于新轮，旧 guard 不得隐藏新窗或改写新控制权。取消、失焦或安全／配置变化使旧票据失效，不能由稍晚结束的旧激活等待重新写成 Visible。目标捕获可为空，先允许独立编辑，写入仍要求后续明确捕获并确认；Pending 中按输出原文／译文只提示确认位置，取消先处理失焦期间已松开的旧键，避免等待陈旧 held 状态。
+
+临时微信输入诊断在 `imk::draft_diagnostics`，覆盖所有微信激活场景，不要求实时翻译或草稿开启，保留 INFO 标记「微信草稿诊断」，修订号 `wechat-draft-v2`；不改路由、配置或写入行为。输入事件每次激活最多 32 个（含 Up）、进程合计最多 256 个；组句回调另有每次激活 16 个、进程 64 个的独立预算，均无时间截止。事件 `begin/end` 以 session／event_id 关联，包含 Down／Up 等事件类别、准备分支 `prepared`、最终 `handled`、current／staged 前后状态、Host 可用性与 epoch、composition／draft 是否存在，以及 marked／insert／confirmed 写口的 attempt／blocked／sent 计数；begin 附 PID／version／build。`empty_marked_attempt/blocked/sent` 单独计空 marked 请求（`marked_*` 仍包含全部 marked）。父类 `composedString/originalString/updateComposition/cancelComposition` 四个组句回调只包装诊断并透传 super，每个回调完成后以同一标记、`phase=callback` 记录一行；异常退出 `completed=false`，`parent_event_id/parent_session` 可为空，不改变原处理。所有新增诊断不记录正文、普通键码、flags 或文本长度，安全输入丢弃记录。`sent` 仅指请求原有 IPC，无宿主成功确认；日志不能证明微信实际插入，也不构成修复验证。排查时保持草稿关闭及候选窗口拼音设置，观察 `nihk` 与 Esc 前后的宿主残留；历史步骤归档如下，无需开启全局 debug。
+
+`live::archive::DraftArchive` 仅内存保存全局最多16条（可包含同应用多条），按application存confirmed＋raw，不存preview。焦点／鼠标／commitComposition／应用变化先暂存，关闭live主开关、secure／loginwindow、进程退出及输入方案／内置英文模式开关／Shift字母解释等raw重放规则变化清存档。其他配置变化先保存当前；明确Cancel只清当前，不删除其他存档。`RestoreDraft`仅允许当前app的最近一条，活动稿／composition必须为空，恢复到内部后重译，不写宿主，不推断输入框身份；raw重放失败退回存档。输出consume后在最终写前被拒，未写snapshot按原app归档；若期间方案变更，raw按字面并入confirmed，不按新方案重新解码。
+
+通用草稿的 `shortcut.insert_live_translation` 增加 Carbon 系统热键入口，保留既有配置与默认 `control+option+v`，不修改用户已设的 `shift+command+y`。注册使用独占标志，冲突等失败的 OSStatus 通过浮窗原因提示可见，按钮入口仍可用；重新激活或关闭再开启草稿模式可重试。所有注册、注销与配置热加载在主线程处理，仅当前有效青简 controller、已识别且未排除的前台应用、实时翻译与草稿模式均开启且非 Secure Input 时持有注册；deactivate、禁用、配置变化及私密状态变化注销。每代注册绑定 generation，旧队列回调拒绝；回调再次检查当前 controller、前台应用、配置与私密状态，再复用按钮的最新整段译文与选字门禁，不因热键命中绕过 pending／error／composition 限制，不自动发送 Enter。系统能否成功注册组合与实际前台条件分别核验，不把注册成功当成所有环境均可抢占的保证。
+
+<details>
+<summary>微信原位输入诊断步骤存档</summary>
+
+以下为旧诊断版的排查记录，不作为独立草稿窗的使用步骤，也不要求用户再次安装诊断包。
+
+
+旧临时诊断版 v2 覆盖草稿开启与关闭的微信输入场景，用于观察原始字母残留，不代表修复。历史复现步骤：
+
+1. 安装诊断版 v2，先保存现有输入内容，切换到 ABC，再手动退出并重新启动青简，确保使用新版本。
+2. 选择一个空的微信输入框，切换到青简中文模式，输入测试按键 `nihk`，不要按 `Space`、`Enter`，也不要选择候选。
+3. 观察微信输入框是否出现原始字母，再按 `Esc`，观察字母是否仍留在输入框。反馈这两次观察结果。
+4. 在终端运行以下命令，并提供输出：
+
+   ```bash
+   rg '微信草稿诊断' "$HOME/Library/Logs/Qingjian/"qingjian.log.* | tail -n 120
+   ```
+
+保持默认日志级别，无需开启 debug。诊断覆盖微信草稿关闭的场景，记录带版本、诊断标记和进程编号；不记录正文、普通键码、修饰键状态或文本长度。每次激活最多记录 32 个输入事件和 16 个组词回调，每个青简进程分别最多 256 个和 64 个，无时间截止。写入记录中的 `sent` 仅表示已发出写请求，不能证明微信已插入文字；需结合输入框的实际表现判断。
+
+</details>
+
+Terminal 关闭草稿模式时的实时翻译采用 `EventOnly`：优先使用当前应用身份，仅当前身份缺失时回退最近已知身份；该身份为 `com.apple.Terminal` 时，只按受控 commit、退格与高亮候选事件累计 `SentenceTracker`，不导入屏幕文字。屏幕 mismatch／空前文只记诊断，不提升 `Full`，也不据此暂停或清除历史；Terminal 的隐式 `commitComposition` 保留连续追踪。activate／deactivate／应用／配置／Secure Input 变化仍硬清；鼠标、非组词导航、复杂删除、普通应用快捷键与明确回车提交暂停追踪，后续新输入重建历史。Terminal 无组词时的 Return 交给应用提交，暂停原因记为 `application_submit` 并保留成功译文；组词中的 Return 只原样上屏，不作为应用提交。自动补全、粘贴及 TUI 内部改写不代表受控输入事件，不能保证同步 Codex 等 TUI 的真实编辑 buffer。此策略只改变实时翻译追踪，Terminal 选区替换继续拒绝，复制保留，其他应用的选区替换核验不变。
+
+实时翻译专用 `TextClient::live_context` 返回原始 length、selected/marked、实际前文范围与真实读取、可读性探测和应用／代理元数据；原 `surrounding_text` 继续给云联想使用。原始 marked 范围保留诊断，`active_marked` 忽略零长度范围并以 selected 为前文读取起点；引擎仍组词但宿主没有活动标记时降为 `Partial`，不否定已上屏历史。选区替换复用当前浮窗的一条成功 receipt（源文、完整译文与会话），包括 pending 时仍显示的旧成功结果。鼠标、非组词普通导航与键盘选区暂停追踪（取消请求、清 tracker 与 Guard）但保留这条 receipt；新输入退出保留模式并重建历史，focus／应用／配置／Secure Input 变化清除选区替换receipt，不能跨会话复用（与按应用保存的草稿archive分别管理）。非空选区必须与 receipt.source 完整逐字相同，不 trim、不做子串匹配、不发新模型请求，不能用整句译文覆盖选中的单词；`com.apple.Terminal` 的所有实时译文选区替换均保守拒绝（包含命令行选区），复制仍可用；不以此推断其他终端一定支持。写前仍要求 `supportsProperty('dapy') == true` 两次正面能力检查，以及 metadata／token 核验、两次选区精确读回，确认会话与选区未变化后仅发出一次写请求；不能以精确读回证明写能力。读取先用 legacy `attributedSubstringFromRange:`，为空时回退官方 IMK `stringFromRange:actualRange:`，`actualRange` 必须与请求完全一致；不依赖 `Full`、4096 单元前文窗口或宿主 `document_length`。无选区、不匹配、不支持或读取失败均提示并保留原文与复制。`write_requested=true` 与 `translation_replace_requested` 只表示发出写请求，宿主 setter 没有成功 ACK，日志不能证明应用已完成替换。非空前文读取复用作能力探测，同范围只读一次；无效或溢出范围不发给宿主。日志 target 固定 `live_translation`：默认 INFO 记录可信度变化、非空会话重置及明确的手动替换拒绝原因（固定 reason，附范围和长度），DEBUG 记录每次采样／请求 ID／源文与结果长度，均不带正文。无需为排查此问题开启全局 debug；旧逐键 debug 日志会记录输入正文。`commit_composition`、`activate`、`deactivate` 分别保留系统事件原因，便于定位终端是否按段结束会话。
 
 **在 Linux 上也能对它做类型检查**（不链接、不产出可执行文件，但编译错误与 clippy 都查得到）。
 `qingjian-macos` 在非 Apple 平台上是硬 `compile_error!`、提交钩子也排除它，于是在 Linux 上改它等于盲改。办法是对 darwin 目标 check，

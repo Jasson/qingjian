@@ -20,6 +20,8 @@ use crate::vocabulary::{Filter, Format, Sort, View};
 #[derive(Debug, Clone)]
 pub enum Message {
     Page(PageId),
+    /// 从中英文页定位到已有的实时翻译替换快捷键录制器。
+    LiveTranslationShortcuts,
     /// 原地改配置文件里的 `[分节] 键 = 值`。
     Set(&'static str, &'static str, toml_edit::Value),
     /// 同上，值是字符串数组。

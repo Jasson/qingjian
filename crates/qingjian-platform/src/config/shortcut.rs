@@ -1,11 +1,13 @@
+//! 快捷键配置、默认组合与动作冲突核验。
+
 use qingjian_core::ModeKeys;
 use serde::{Deserialize, Serialize};
 
-use super::PageKeys;
 use super::highlight_keys::HighlightKeys;
 use super::key_combo::KeyCombo;
 use super::modifiers::Modifiers;
 use super::switch_key::SwitchKeys;
+use super::{DraftShortcut, PageKeys};
 
 /// 配置文件 `[shortcut]` 分节：前缀模式键（Core 的 [`ModeKeys`]）加壳层的修饰键组合。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -36,6 +38,49 @@ pub struct ShortcutConfig {
 
     /// 把应用里选中的文字译成学习语言（需要云服务开着）。
     pub translate_selection: KeyCombo,
+
+    /// macOS：复制当前实时译文，空串禁用。
+    #[serde(
+        deserialize_with = "super::optional_key_combo::deserialize_letter",
+        serialize_with = "super::optional_key_combo::serialize"
+    )]
+    pub copy_live_translation: Option<KeyCombo>,
+
+    /// macOS：手动以已有实时译文替换完全匹配的选中原文，空串禁用。
+    #[serde(
+        deserialize_with = "super::optional_key_combo::deserialize_letter",
+        serialize_with = "super::optional_key_combo::serialize"
+    )]
+    pub replace_live_translation: Option<KeyCombo>,
+
+    /// macOS 草稿模式：手动输出最新整段译文，空串禁用。
+    #[serde(
+        deserialize_with = "super::optional_key_combo::deserialize_letter",
+        serialize_with = "super::optional_key_combo::serialize"
+    )]
+    pub insert_live_translation: Option<KeyCombo>,
+
+    /// macOS：将剪贴板纯文本追加到已有草稿，空串禁用。
+    #[serde(
+        deserialize_with = "super::optional_key_combo::deserialize_letter",
+        serialize_with = "super::optional_key_combo::serialize"
+    )]
+    pub paste_draft: Option<KeyCombo>,
+
+    /// macOS：打开可聚焦翻译草稿窗，空串禁用。
+    #[serde(
+        deserialize_with = "super::optional_key_combo::deserialize_letter",
+        serialize_with = "super::optional_key_combo::serialize"
+    )]
+    pub open_translation_draft: Option<KeyCombo>,
+
+    /// 草稿：输出已确认文字加未选原始按键，空串禁用。
+    #[serde(with = "super::draft_shortcut")]
+    pub insert_original: Option<DraftShortcut>,
+
+    /// 草稿：一次取消整段草稿与拼音，空串禁用。
+    #[serde(with = "super::draft_shortcut")]
+    pub cancel_draft: Option<DraftShortcut>,
 
     /// Windows 组句中按需调用 AI（缺省 Ctrl+Alt+J）。
     pub predict: KeyCombo,
@@ -71,6 +116,31 @@ impl Default for ShortcutConfig {
             translation,
             translation_second,
             translate_selection,
+            copy_live_translation: Some(KeyCombo {
+                key: 'c',
+                ..KeyCombo::TRANSLATE_DEFAULT
+            }),
+            replace_live_translation: Some(KeyCombo {
+                key: 'r',
+                ..KeyCombo::TRANSLATE_DEFAULT
+            }),
+            insert_live_translation: Some(KeyCombo {
+                key: 'v',
+                ..KeyCombo::TRANSLATE_DEFAULT
+            }),
+            paste_draft: Some(KeyCombo {
+                key: 'v',
+                modifiers: Modifiers {
+                    command: true,
+                    ..Modifiers::default()
+                },
+            }),
+            open_translation_draft: Some(KeyCombo {
+                key: 'e',
+                ..KeyCombo::TRANSLATE_DEFAULT
+            }),
+            insert_original: Some(DraftShortcut::Enter),
+            cancel_draft: Some(DraftShortcut::Escape),
             predict: KeyCombo::PREDICT_DEFAULT,
             delete_candidate: Modifiers::SHIFT,
         }
@@ -78,6 +148,93 @@ impl Default for ShortcutConfig {
 }
 
 impl ShortcutConfig {
+    /// Carbon 注册和执行均须排除与粘贴相同的输出键，避免旧注册抢先输出。
+    pub fn paste_draft_blocks_translation(&self) -> bool {
+        self.paste_draft
+            .zip(self.insert_live_translation)
+            .is_some_and(|(paste, output)| {
+                paste.modifiers == output.modifiers && paste.key.eq_ignore_ascii_case(&output.key)
+            })
+    }
+
+    /// 粘贴配置冲突时运行时消费组合并提示，禁止同时输出旧稿或漏给应用。
+    pub fn paste_draft_conflicts(&self) -> bool {
+        let Some(paste) = self.paste_draft else {
+            return false;
+        };
+        if !paste.key.is_ascii_alphabetic() || paste.modifiers.is_empty() {
+            return true;
+        }
+        let same = |other: KeyCombo| {
+            paste.modifiers == other.modifiers && paste.key.eq_ignore_ascii_case(&other.key)
+        };
+        [
+            Some(self.translate_selection),
+            Some(self.predict),
+            self.copy_live_translation,
+            self.replace_live_translation,
+            self.insert_live_translation,
+            self.open_translation_draft,
+        ]
+        .into_iter()
+        .flatten()
+        .any(same)
+            || [self.insert_original, self.cancel_draft]
+                .into_iter()
+                .flatten()
+                .any(|action| matches!(action, DraftShortcut::Combo(combo) if same(combo)))
+    }
+
+    /// 新草稿入口与已有动作冲突时只禁用新入口，保留旧快捷键的优先级。
+    pub fn open_translation_draft_conflicts(&self) -> bool {
+        let Some(open) = self.open_translation_draft else {
+            return false;
+        };
+        if !open.key.is_ascii_alphabetic() || open.modifiers.is_empty() {
+            return true;
+        }
+        let same = |other: KeyCombo| {
+            open.modifiers == other.modifiers && open.key.eq_ignore_ascii_case(&other.key)
+        };
+        [
+            Some(self.translate_selection),
+            Some(self.predict),
+            self.copy_live_translation,
+            self.replace_live_translation,
+            self.insert_live_translation,
+        ]
+        .into_iter()
+        .flatten()
+        .any(same)
+            || [self.insert_original, self.cancel_draft]
+                .into_iter()
+                .flatten()
+                .any(|shortcut| matches!(shortcut, DraftShortcut::Combo(combo) if same(combo)))
+    }
+
+    /// 手改配置的草稿动作冲突时交由壳禁用，不能抢走另一动作或既有组合。
+    pub fn draft_shortcuts_conflict(&self) -> bool {
+        if self.insert_original.is_some() && self.insert_original == self.cancel_draft {
+            return true;
+        }
+        [self.insert_original, self.cancel_draft]
+            .into_iter()
+            .flatten()
+            .any(|value| {
+                let DraftShortcut::Combo(combo) = value else {
+                    return false;
+                };
+                [
+                    Some(self.translate_selection),
+                    Some(self.predict),
+                    self.copy_live_translation,
+                    self.replace_live_translation,
+                    self.insert_live_translation,
+                ]
+                .contains(&Some(combo))
+            })
+    }
+
     /// 删候选的修饰键；为空或与任一组译词键撞了就退回缺省。
     pub fn delete_keys(&self) -> Modifiers {
         let (first, second) = self.translation_keys();
@@ -108,6 +265,30 @@ impl ShortcutConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn paste_draft_defaults_round_trips_disables_and_preserves_translation_override() {
+        let parsed: ShortcutConfig =
+            toml::from_str("insert_live_translation = 'command+shift+y'").unwrap();
+        let paste = parsed.paste_draft.unwrap();
+        assert_eq!(paste.key, 'v');
+        assert!(paste.modifiers.command);
+        assert!(!paste.modifiers.control && !paste.modifiers.option && !paste.modifiers.shift);
+        assert!(!parsed.paste_draft_conflicts());
+        let round_trip: ShortcutConfig =
+            toml::from_str(&toml::to_string(&parsed).unwrap()).unwrap();
+        assert_eq!(round_trip, parsed);
+        let disabled: ShortcutConfig = toml::from_str("paste_draft = ''").unwrap();
+        assert!(disabled.paste_draft.is_none());
+        let custom: ShortcutConfig = toml::from_str("paste_draft = 'control+option+p'").unwrap();
+        assert_eq!(custom.paste_draft.unwrap().key, 'p');
+        let conflict: ShortcutConfig =
+            toml::from_str("insert_live_translation = 'command+v'").unwrap();
+        assert!(conflict.paste_draft_conflicts());
+        assert!(conflict.paste_draft_blocks_translation());
+        assert!(!parsed.paste_draft_blocks_translation());
+        assert!(toml::from_str::<ShortcutConfig>("paste_draft = 'v'").is_err());
+    }
 
     #[test]
     fn optional_punctuation_and_extra_page_keys_round_trip() {

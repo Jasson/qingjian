@@ -154,6 +154,9 @@ impl QingjianInputController {
 
     /// 鼠标：单击格子挪高亮、双击上屏，点胶囊换组，点标签换分类，滚轮滚视口，点 ✕ 收起。
     pub(super) fn panel_mouse_event(&self, hit: PanelMouse, client: TextClient<'_>) {
+        if crate::imk::editor::session_owned() {
+            return;
+        }
         if !host::with(|h| h.engine.symbol_panel().is_some()).unwrap_or(false) {
             return;
         }

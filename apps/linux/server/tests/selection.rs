@@ -37,7 +37,13 @@ fn setup() -> (Router, Receiver<PredictionRequest>, Sender<Prediction>) {
             replies: receiver,
         },
     ));
-    let mut router = Router::new(engine, RouterConfig::default());
+    let mut router = Router::new(
+        engine,
+        RouterConfig {
+            translate_selection: "alt+shift+t".parse().unwrap(),
+            ..RouterConfig::default()
+        },
+    );
     router.handle(ClientMessage::OpenSession {
         session: SessionId(1),
         app: None,

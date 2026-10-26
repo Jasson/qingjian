@@ -24,6 +24,9 @@ pub struct KeyRecorder<'a> {
     width: f32,
 
     disabled: bool,
+
+    /// 将 Esc 交给录制回调，而不是结束录制；失焦仍取消。
+    allow_escape: bool,
 }
 
 impl<'a> KeyRecorder<'a> {
@@ -34,6 +37,7 @@ impl<'a> KeyRecorder<'a> {
             recording: false,
             width: 150.0,
             disabled: false,
+            allow_escape: false,
         }
     }
 
@@ -56,7 +60,15 @@ impl<'a> KeyRecorder<'a> {
         Self { disabled, ..self }
     }
 
-    /// 点击产出 `on_start`；录制中按键产出 `on_press`（Tab 走焦点不算），Esc 与失去焦点产出 `on_cancel`。
+    /// 允许 Esc 作为被录制按键；失焦仍取消，缺省关闭。
+    pub fn allow_escape(self, allow_escape: bool) -> Self {
+        Self {
+            allow_escape,
+            ..self
+        }
+    }
+
+    /// 点击产出 `on_start`；录制中按键产出 `on_press`（Tab 走焦点不算），缺省 Esc 与失去焦点产出 `on_cancel`；允许录入 Esc 后仅失焦取消。
     pub fn build<M: Clone + 'static>(
         self,
         ui: &mut Ui<M>,
@@ -127,7 +139,7 @@ impl<'a> KeyRecorder<'a> {
             let cancel = on_cancel.clone();
             interact = interact
                 .on_key(move |press| {
-                    Some(if press.key == KeyCode::Escape {
+                    Some(if press.key == KeyCode::Escape && !self.allow_escape {
                         cancel.clone()
                     } else {
                         on_press(press)

@@ -11,6 +11,12 @@ const SETTINGS: &str = "settings/preferences";
 /// （页、行标题、文档（`docs/user/` 下的路径，不带 `.md`）、标题（空着是整页））。
 const LINKS: &[(PageId, &str, &str, &str)] = &[
     (
+        PageId::Shortcuts,
+        "打开翻译草稿窗",
+        "input/live-translation",
+        "微信独立翻译草稿窗",
+    ),
+    (
         PageId::Input,
         "拼音",
         "input/fuzzy-and-shuangpin",
@@ -92,9 +98,57 @@ const LINKS: &[(PageId, &str, &str, &str)] = &[
     (PageId::Language, "Shift + 字母", SETTINGS, "中英文"),
     (
         PageId::Language,
+        "不使用草稿的应用",
+        "input/live-translation",
+        "按应用关闭草稿模式",
+    ),
+    (
+        PageId::Shortcuts,
+        "输出草稿原文",
+        "input/live-translation",
+        "翻译草稿模式",
+    ),
+    (
+        PageId::Shortcuts,
+        "取消整段草稿",
+        "input/live-translation",
+        "翻译草稿模式",
+    ),
+    (
+        PageId::Language,
+        "翻译草稿模式",
+        "input/live-translation",
+        "翻译草稿模式",
+    ),
+    (
+        PageId::Shortcuts,
+        "输出草稿译文",
+        "input/live-translation",
+        "翻译草稿模式",
+    ),
+    (
+        PageId::Language,
+        "允许用译文替换选中内容",
+        "input/live-translation",
+        "复制与手动替换",
+    ),
+    (
+        PageId::Shortcuts,
+        "复制实时译文",
+        "input/live-translation",
+        "复制与手动替换",
+    ),
+    (
+        PageId::Shortcuts,
+        "用实时译文替换选中内容",
+        "input/live-translation",
+        "复制与手动替换",
+    ),
+    (
+        PageId::Language,
         "实时中英互译",
         "input/live-translation",
-        "边输入边翻译",
+        "翻译草稿模式",
     ),
     (
         PageId::Language,

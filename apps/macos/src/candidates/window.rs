@@ -51,16 +51,31 @@ impl CandidateWindow {
 
     /// 显示一帧。`anchor` 是光标行的屏幕矩形，窗口贴在它下方，放不下就放上方。
     pub fn show(&mut self, frame: Frame, anchor: NSRect) {
+        if crate::imk::editor::session_owned() {
+            self.hide();
+            return;
+        }
         self.show_at(frame, anchor, false);
     }
 
-    /// 独立翻译条放在光标上方，鼠标穿透，不参与候选点击。
+    /// 独立翻译条放在光标上方，只处理自绘动作，不抢输入焦点。
     pub fn show_translation(&mut self, frame: Frame, anchor: NSRect, avoid: Option<NSRect>) {
+        if crate::imk::editor::session_owned() {
+            self.hide();
+            return;
+        }
         self.show_at(frame, anchor, true);
-        self.panel.setIgnoresMouseEvents(true);
+        self.panel.setIgnoresMouseEvents(!self.view.uses_bitmap());
         if let Some(avoid) = avoid {
             self.avoid_overlap(avoid, anchor);
         }
+    }
+
+    /// 只匹配这块非激活窗口的事件，避免把应用中的普通点击误认为翻译动作。
+    pub fn owns_event(&self, event: &NSEvent) -> bool {
+        event.window(self.mtm).is_some_and(|window| {
+            self.panel.isVisible() && window.windowNumber() == self.panel.windowNumber()
+        })
     }
 
     /// 当前可见窗口的屏幕矩形，供独立翻译条避让候选。

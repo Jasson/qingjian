@@ -35,6 +35,9 @@ pub struct Frame {
 
     /// 符号面板的标签；有它时这一帧是面板：`rows` 是格子（按 `columns` 行优先排开），一律系统绘制。
     pub panel: Option<PanelTabs>,
+
+    /// 独立翻译条的自绘动作，不参与候选选择。
+    pub actions: Vec<qingjian_render::Action>,
 }
 
 impl Frame {

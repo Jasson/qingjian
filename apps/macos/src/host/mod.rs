@@ -11,10 +11,13 @@ mod diagnostics;
 mod dictionaries;
 mod init;
 mod live;
+pub(crate) use live::{ObservationToken, context_policy};
 mod model;
 mod presenting;
 mod session;
 mod settings;
+
+use crate::imk::draft_diagnostics::snapshot::Snapshot;
 
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -22,22 +25,20 @@ use std::path::PathBuf;
 use objc2_app_kit::{NSPasteboard, NSPasteboardTypeString};
 use objc2_foundation::{NSProcessInfo, NSRect, NSString};
 use qingjian_core::{
-    Candidate, CandidateKind, CloudWord, Engine, FuzzyRules, Language, ModeKeys, NoInputLogger,
-    Prediction,
+    Candidate, CandidateKind, CloudWord, Engine, Language, NoInputLogger, Prediction,
 };
 use qingjian_learning::InputLog;
 use qingjian_platform::extra_dictionaries;
 use qingjian_platform::{
-    Appearance, AppsConfig, CandidateRenderer, DEFAULT_ENGLISH_CANDIDATES_ON, DictionariesConfig,
-    HighlightKeys, KeyCombo, LEARNING_LANGUAGE_OFF, LayoutMode, LocalModelConfig, LogLevel,
-    Modifiers, PAGE_KEY_OPTIONS, PreeditMode, Scheme, ShortcutConfig, UpdateChannel,
+    AppsConfig, DictionariesConfig, HighlightKeys, KeyCombo, LayoutMode, LocalModelConfig,
+    Modifiers, PreeditMode,
 };
 use qingjian_predict::{API_USAGE_FILE, ConnectionTest, PredictConfig, PredictError};
 
 use crate::app::{Settings, logging, paths};
 use crate::candidates::{CandidateWindow, Preedit};
-use crate::menubar::{InputMenu, MenuAction, ModeIndicator};
-use crate::preferences::{PreferencesWindow, Setting, SettingValue, UpdateStatus};
+use crate::menubar::{InputMenu, ModeIndicator};
+use crate::preferences::{PreferencesWindow, UpdateStatus};
 
 use cloud::{CloudTestMonitor, PredictMonitor};
 use config::{ConfigWatch, TextReplacement};
@@ -221,10 +222,76 @@ const GLOSSARY_LANGUAGES: [Language; 5] = [
 /// 所以借不到就记一条日志放过这次调用，调用方本来就都按 `None` 处理；根治靠把 IPC 放在借用之外。
 pub fn with<R>(f: impl FnOnce(&mut Host) -> R) -> Option<R> {
     HOST.with(|host| match host.try_borrow_mut() {
-        Ok(mut guard) => guard.as_mut().map(f),
+        Ok(mut guard) => {
+            let result = guard.as_mut().map(f);
+            let observation = crate::imk::hotkey::tracking()
+                .then(|| guard.as_ref().map(Host::live_observation_token))
+                .flatten();
+            let backspace = guard.as_ref().and_then(|h| {
+                let configured = h.draft_active()
+                    && h.settings.config().live_translation.enabled
+                    && !crate::imk::editor::session_owned();
+                (configured || crate::imk::backspace_tap::tracking()).then(|| {
+                    (
+                        h.live_observation_token(),
+                        configured,
+                        !h.engine.composition().is_empty() || !h.live.draft.source().is_empty(),
+                        {
+                            let bindings = crate::imk::backspace_tap::Bindings::for_config(
+                                &h.settings.config().shortcut,
+                            );
+                            if h.translation.is_some() || h.engine.symbol_panel().is_some() {
+                                bindings.without_paste()
+                            } else {
+                                bindings
+                            }
+                        },
+                    )
+                })
+            });
+            drop(guard);
+            if let Some(observation) = observation {
+                crate::imk::hotkey::publish_observation(observation);
+            }
+            if let Some((token, configured, content, bindings)) = backspace {
+                crate::imk::backspace_tap::publish(token, configured, content, bindings);
+            }
+            result
+        }
         Err(_) => {
             tracing::warn!("Host 正在被借用（IMK 回调重入），本次调用跳过");
             None
         }
+    })
+}
+
+/// 把已确认的完整译文写入剪贴板；调用方先释放 Host 借用。
+pub fn copy_text_to_pasteboard(text: &str) -> bool {
+    diagnostics::copy_to_pasteboard(text)
+}
+
+/// 文本写入门禁在借用冲突时关闭输出，不能把 IMK 重入当成草稿模式关闭。
+pub(crate) fn stage_text_output() -> bool {
+    if crate::imk::secure_input::enabled() {
+        return false;
+    }
+    HOST.with(|host| match host.try_borrow() {
+        Ok(guard) => guard.as_ref().is_some_and(|h| h.draft_active()),
+        Err(_) => true,
+    })
+}
+
+/// 仅读缓存；不经 with 发布原生观察状态，不请求客户端或采集正文。
+pub(crate) fn draft_diagnostic_snapshot() -> Option<Snapshot> {
+    HOST.with(|host| {
+        let guard = host.try_borrow().ok()?;
+        let h = guard.as_ref()?;
+        Some(Snapshot {
+            wechat: h.engine.application() == Some("com.tencent.xinWeChat"),
+            staged: h.draft_active(),
+            epoch: h.live.epoch,
+            composing: !h.engine.composition().is_empty(),
+            draft_present: !h.live.draft.committed().is_empty(),
+        })
     })
 }

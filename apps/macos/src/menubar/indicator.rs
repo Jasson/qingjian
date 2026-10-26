@@ -184,7 +184,7 @@ define_class!(
     impl ModeMonitor {
         #[unsafe(method(tick:))]
         fn tick(&self, _timer: Option<&AnyObject>) {
-            crate::host::with(|h| h.indicator.update());
+            crate::host::with(|h| { h.indicator.update(); h.menu.sync_restore(h.can_restore_from_menu()); });
         }
 
         #[unsafe(method(collapse:))]

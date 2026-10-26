@@ -8,6 +8,7 @@ pub enum FieldId {
     ApiKey,
     LiveBaseUrl,
     LiveModel,
+    LiveDraftExcludedApps,
     PhraseCode,
     PhraseText,
     /// 生词本页的搜索框，不存进配置。
@@ -16,12 +17,13 @@ pub enum FieldId {
 
 impl FieldId {
     /// 存进配置的那几个（短语的两个随卡片一起存）。
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::BaseUrl,
         Self::Model,
         Self::ApiKey,
         Self::LiveBaseUrl,
         Self::LiveModel,
+        Self::LiveDraftExcludedApps,
     ];
 
     /// 对应配置分节里的键。
@@ -30,6 +32,7 @@ impl FieldId {
             Self::BaseUrl | Self::LiveBaseUrl => "base_url",
             Self::Model | Self::LiveModel => "model",
             Self::ApiKey => "api_key",
+            Self::LiveDraftExcludedApps => "draft_excluded_apps",
             Self::PhraseCode => "code",
             Self::PhraseText => "text",
             Self::VocabularySearch => "vocabulary-search",

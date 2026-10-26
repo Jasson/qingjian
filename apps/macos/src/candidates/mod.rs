@@ -20,3 +20,8 @@ pub use panel_tabs::PanelTabs;
 pub use preedit::Preedit;
 pub use row::Row;
 pub use window::CandidateWindow;
+
+pub(crate) use theme::Theme;
+pub(crate) use view::CandidateView;
+
+pub(crate) use bitmap::convert::frame as render_frame;

@@ -1,5 +1,7 @@
 //! 本地 HTTP 回放验证真实请求、修订取消与连接限制。
 
+mod cancellation;
+
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::mpsc;

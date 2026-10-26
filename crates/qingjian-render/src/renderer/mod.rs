@@ -101,11 +101,16 @@ impl Renderer {
             cell_nodes: Vec::new(),
             candidate_nodes: Vec::new(),
             sense_nodes: Vec::new(),
+            action_nodes: Vec::new(),
         };
         let root = builder.window(frame, layout)?;
-        let (candidate_nodes, sense_nodes) = (builder.candidate_nodes, builder.sense_nodes);
+        let (candidate_nodes, sense_nodes, action_nodes) = (
+            builder.candidate_nodes,
+            builder.sense_nodes,
+            builder.action_nodes,
+        );
         let content = scene.layout(root, self.stage.text())?;
-        self.hits = hit_regions(&scene, root, &candidate_nodes, &sense_nodes)?;
+        self.hits = hit_regions(&scene, root, &candidate_nodes, &sense_nodes, &action_nodes)?;
         // 排布变了位置不可比，不与上一帧配对过渡
         let painted = self
             .stage
@@ -155,6 +160,7 @@ fn hit_regions(
     root: NodeId,
     candidates: &[(usize, NodeId)],
     senses: &[(usize, usize, NodeId)],
+    actions: &[(crate::ActionTarget, NodeId)],
 ) -> Result<Vec<HitRegion>, RenderError> {
     let mut regions: Vec<HitRegion> = Vec::new();
     let mut add = |target: HitTarget, node: NodeId| -> Result<(), RenderError> {
@@ -176,6 +182,9 @@ fn hit_regions(
     }
     for &(candidate, node) in candidates {
         add(HitTarget::Candidate(candidate), node)?;
+    }
+    for &(action, node) in actions {
+        add(HitTarget::Action(action), node)?;
     }
     Ok(regions)
 }

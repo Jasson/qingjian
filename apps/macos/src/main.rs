@@ -19,6 +19,9 @@ use objc2_foundation::NSString;
 use objc2_input_method_kit::IMKServer;
 
 fn main() {
+    if std::env::args().any(|argument| argument == "--focused-draft-smoke") {
+        std::process::exit(imk::editor::smoke());
+    }
     // `--register` 起的子进程：在干净的 TIS 缓存里回读启用状态并切成当前（见 input_source.rs）
     let mut arguments = std::env::args().skip(1);
     if arguments.next().as_deref() == Some(app::input_source::FINISH_FLAG) {

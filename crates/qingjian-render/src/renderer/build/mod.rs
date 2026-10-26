@@ -2,6 +2,7 @@
 //!
 //! 一个模板节点可能产出零个（条件不成立、绑定为空）或多个（`repeat`）场景节点，所以都往 `out` 里推。
 
+mod actions;
 mod cell;
 mod context;
 mod frame;
@@ -43,6 +44,8 @@ pub(super) struct Builder<'a> {
 
     /// 各候选译文里每条译词的片段节点（第几个候选，第几条，节点）。
     pub(super) sense_nodes: Vec<(usize, usize, NodeId)>,
+
+    pub(super) action_nodes: Vec<(crate::ActionTarget, NodeId)>,
 }
 
 impl Builder<'_> {
@@ -53,7 +56,14 @@ impl Builder<'_> {
             Layout::Vertical => &windows.vertical,
             Layout::Horizontal => &windows.horizontal,
         };
-        self.root(spec, Context::new(frame))
+        let root = self.root(spec, Context::new(frame))?;
+        if frame.actions.is_empty() {
+            Ok(root)
+        } else {
+            self.candidate_nodes.clear();
+            self.sense_nodes.clear();
+            self.actions(root, &frame.actions)
+        }
     }
 
     /// 状态条的根节点（主题写了 `status.root`）：格子按 `cells` 展开，各格的盒子记在 [`Self::cell_nodes`]。
